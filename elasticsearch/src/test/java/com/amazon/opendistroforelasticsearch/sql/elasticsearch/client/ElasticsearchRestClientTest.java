@@ -16,6 +16,7 @@
 
 package com.amazon.opendistroforelasticsearch.sql.elasticsearch.client;
 
+import static com.amazon.opendistroforelasticsearch.sql.elasticsearch.client.ElasticsearchClient.META_CLUSTER_NAME;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -27,8 +28,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprIntegerValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprTupleValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprValue;
+import com.amazon.opendistroforelasticsearch.sql.elasticsearch.data.value.ElasticsearchExprValueFactory;
 import com.amazon.opendistroforelasticsearch.sql.elasticsearch.mapping.IndexMapping;
-import com.amazon.opendistroforelasticsearch.sql.elasticsearch.request.ElasticsearchRequest;
+import com.amazon.opendistroforelasticsearch.sql.elasticsearch.request.ElasticsearchScrollRequest;
 import com.amazon.opendistroforelasticsearch.sql.elasticsearch.response.ElasticsearchResponse;
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableMap;
@@ -36,15 +41,21 @@ import com.google.common.io.Resources;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.lucene.search.TotalHits;
+import org.elasticsearch.action.admin.cluster.settings.ClusterGetSettingsResponse;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.indices.GetIndexRequest;
+import org.elasticsearch.client.indices.GetIndexResponse;
 import org.elasticsearch.client.indices.GetMappingsRequest;
 import org.elasticsearch.client.indices.GetMappingsResponse;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.cluster.metadata.MappingMetadata;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.DeprecationHandler;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.common.xcontent.XContentParser;
@@ -66,6 +77,18 @@ class ElasticsearchRestClientTest {
   private RestHighLevelClient restClient;
 
   private ElasticsearchRestClient client;
+
+  @Mock
+  private ElasticsearchExprValueFactory factory;
+
+  @Mock
+  private SearchHit searchHit;
+
+  @Mock
+  private GetIndexResponse getIndexResponse;
+
+  private ExprTupleValue exprTupleValue = ExprTupleValue.fromExprValueMap(ImmutableMap.of("id",
+      new ExprIntegerValue(1)));
 
   @BeforeEach
   void setUp() {
@@ -96,7 +119,7 @@ class ElasticsearchRestClientTest {
     assertEquals("geo_point", indexMapping.getFieldType("location"));
     assertEquals("some_new_es_type_outside_type_system", indexMapping.getFieldType("new_field"));
     assertEquals("text", indexMapping.getFieldType("field with spaces"));
-    assertEquals("text", indexMapping.getFieldType("employer"));
+    assertEquals("text_keyword", indexMapping.getFieldType("employer"));
     assertEquals("keyword", indexMapping.getFieldType("employer.raw"));
     assertEquals("nested", indexMapping.getFieldType("projects"));
     assertEquals("boolean", indexMapping.getFieldType("projects.active"));
@@ -104,7 +127,7 @@ class ElasticsearchRestClientTest {
     assertEquals("nested", indexMapping.getFieldType("projects.members"));
     assertEquals("text", indexMapping.getFieldType("projects.members.name"));
     assertEquals("object", indexMapping.getFieldType("manager"));
-    assertEquals("text", indexMapping.getFieldType("manager.name"));
+    assertEquals("text_keyword", indexMapping.getFieldType("manager.name"));
     assertEquals("keyword", indexMapping.getFieldType("manager.name.keyword"));
     assertEquals("keyword", indexMapping.getFieldType("manager.address"));
     assertEquals("long", indexMapping.getFieldType("manager.salary"));
@@ -126,9 +149,11 @@ class ElasticsearchRestClientTest {
     when(searchResponse.getHits())
         .thenReturn(
             new SearchHits(
-                new SearchHit[] {new SearchHit(1)},
+                new SearchHit[] {searchHit},
                 new TotalHits(1L, TotalHits.Relation.EQUAL_TO),
                 1.0F));
+    when(searchHit.getSourceAsString()).thenReturn("{\"id\", 1}");
+    when(factory.construct(any())).thenReturn(exprTupleValue);
 
     // Mock second scroll request followed
     SearchResponse scrollResponse = mock(SearchResponse.class);
@@ -137,13 +162,13 @@ class ElasticsearchRestClientTest {
     when(scrollResponse.getHits()).thenReturn(SearchHits.empty());
 
     // Verify response for first scroll request
-    ElasticsearchRequest request = new ElasticsearchRequest("test");
+    ElasticsearchScrollRequest request = new ElasticsearchScrollRequest("test", factory);
     ElasticsearchResponse response1 = client.search(request);
     assertFalse(response1.isEmpty());
 
-    Iterator<SearchHit> hits = response1.iterator();
+    Iterator<ExprValue> hits = response1.iterator();
     assertTrue(hits.hasNext());
-    assertEquals(new SearchHit(1), hits.next());
+    assertEquals(exprTupleValue, hits.next());
     assertFalse(hits.hasNext());
 
     // Verify response for second scroll request
@@ -155,7 +180,31 @@ class ElasticsearchRestClientTest {
   void searchWithIOException() throws IOException {
     when(restClient.search(any(), any())).thenThrow(new IOException());
     assertThrows(
-        IllegalStateException.class, () -> client.search(new ElasticsearchRequest("test")));
+        IllegalStateException.class,
+        () -> client.search(new ElasticsearchScrollRequest("test", factory)));
+  }
+
+  @Test
+  void scrollWithIOException() throws IOException {
+    // Mock first scroll request
+    SearchResponse searchResponse = mock(SearchResponse.class);
+    when(restClient.search(any(), any())).thenReturn(searchResponse);
+    when(searchResponse.getScrollId()).thenReturn("scroll123");
+    when(searchResponse.getHits())
+        .thenReturn(
+            new SearchHits(
+                new SearchHit[] {new SearchHit(1)},
+                new TotalHits(1L, TotalHits.Relation.EQUAL_TO),
+                1.0F));
+
+    // Mock second scroll request followed
+    when(restClient.scroll(any(), any())).thenThrow(new IOException());
+
+    // First request run successfully
+    ElasticsearchScrollRequest scrollRequest = new ElasticsearchScrollRequest("test", factory);
+    client.search(scrollRequest);
+    assertThrows(
+        IllegalStateException.class, () -> client.search(scrollRequest));
   }
 
   @Test
@@ -170,7 +219,7 @@ class ElasticsearchRestClientTest {
 
   @Test
   void cleanup() throws IOException {
-    ElasticsearchRequest request = new ElasticsearchRequest("test");
+    ElasticsearchScrollRequest request = new ElasticsearchScrollRequest("test", factory);
     request.setScrollId("scroll123");
     client.cleanup(request);
     verify(restClient).clearScroll(any(), any());
@@ -179,7 +228,7 @@ class ElasticsearchRestClientTest {
 
   @Test
   void cleanupWithoutScrollId() throws IOException {
-    ElasticsearchRequest request = new ElasticsearchRequest("test");
+    ElasticsearchScrollRequest request = new ElasticsearchScrollRequest("test", factory);
     client.cleanup(request);
     verify(restClient, never()).clearScroll(any(), any());
   }
@@ -188,9 +237,46 @@ class ElasticsearchRestClientTest {
   void cleanupWithIOException() throws IOException {
     when(restClient.clearScroll(any(), any())).thenThrow(new IOException());
 
-    ElasticsearchRequest request = new ElasticsearchRequest("test");
+    ElasticsearchScrollRequest request = new ElasticsearchScrollRequest("test", factory);
     request.setScrollId("scroll123");
     assertThrows(IllegalStateException.class, () -> client.cleanup(request));
+  }
+
+  @Test
+  void getIndices() throws IOException {
+    when(restClient.indices().get(any(GetIndexRequest.class), any(RequestOptions.class)))
+        .thenReturn(getIndexResponse);
+    when(getIndexResponse.getIndices()).thenReturn(new String[] {"index"});
+
+    final List<String> indices = client.indices();
+    assertFalse(indices.isEmpty());
+  }
+
+  @Test
+  void getIndicesWithIOException() throws IOException {
+    when(restClient.indices().get(any(GetIndexRequest.class), any(RequestOptions.class)))
+        .thenThrow(new IOException());
+    assertThrows(IllegalStateException.class, () -> client.indices());
+  }
+
+  @Test
+  void meta() throws IOException {
+    Settings defaultSettings = Settings.builder().build();
+    ClusterGetSettingsResponse settingsResponse = mock(ClusterGetSettingsResponse.class);
+    when(restClient.cluster().getSettings(any(), any(RequestOptions.class)))
+        .thenReturn(settingsResponse);
+    when(settingsResponse.getDefaultSettings()).thenReturn(defaultSettings);
+
+    final Map<String, String> meta = client.meta();
+    assertEquals("elasticsearch", meta.get(META_CLUSTER_NAME));
+  }
+
+  @Test
+  void metaWithIOException() throws IOException {
+    when(restClient.cluster().getSettings(any(), any(RequestOptions.class)))
+        .thenThrow(new IOException());
+
+    assertThrows(IllegalStateException.class, () -> client.meta());
   }
 
   private Map<String, MappingMetadata> mockFieldMappings(String indexName, String mappings)

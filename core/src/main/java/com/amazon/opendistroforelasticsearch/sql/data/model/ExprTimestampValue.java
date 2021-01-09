@@ -21,13 +21,14 @@ import com.amazon.opendistroforelasticsearch.sql.data.type.ExprCoreType;
 import com.amazon.opendistroforelasticsearch.sql.data.type.ExprType;
 import com.amazon.opendistroforelasticsearch.sql.exception.SemanticCheckException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
-import lombok.EqualsAndHashCode;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -43,6 +44,8 @@ public class ExprTimestampValue extends AbstractExprValue {
    * todo. only support timestamp in format yyyy-MM-dd HH:mm:ss.
    */
   private static final DateTimeFormatter FORMATTER = DateTimeFormatter
+      .ofPattern("yyyy-MM-dd HH:mm:ss[.SSSSSS]");
+  private static final DateTimeFormatter FORMATTER_WITNOUT_NANO = DateTimeFormatter
       .ofPattern("yyyy-MM-dd HH:mm:ss");
   private final Instant timestamp;
 
@@ -54,14 +57,16 @@ public class ExprTimestampValue extends AbstractExprValue {
       this.timestamp = LocalDateTime.parse(timestamp, FORMATTER).atZone(ZONE).toInstant();
     } catch (DateTimeParseException e) {
       throw new SemanticCheckException(String.format("timestamp:%s in unsupported format, please "
-          + "use yyyy-MM-dd HH:mm:ss", timestamp));
+          + "use yyyy-MM-dd HH:mm:ss[.SSSSSS]", timestamp));
     }
 
   }
 
   @Override
   public String value() {
-    return FORMATTER.withZone(ZONE).format(timestamp.truncatedTo(ChronoUnit.SECONDS));
+    return timestamp.getNano() == 0 ? FORMATTER_WITNOUT_NANO.withZone(ZONE)
+        .format(timestamp.truncatedTo(ChronoUnit.SECONDS))
+        : FORMATTER.withZone(ZONE).format(timestamp);
   }
 
   @Override
@@ -75,18 +80,33 @@ public class ExprTimestampValue extends AbstractExprValue {
   }
 
   @Override
+  public LocalDate dateValue() {
+    return timestamp.atZone(ZONE).toLocalDate();
+  }
+
+  @Override
+  public LocalTime timeValue() {
+    return timestamp.atZone(ZONE).toLocalTime();
+  }
+
+  @Override
+  public LocalDateTime datetimeValue() {
+    return timestamp.atZone(ZONE).toLocalDateTime();
+  }
+
+  @Override
   public String toString() {
     return String.format("TIMESTAMP '%s'", value());
   }
 
   @Override
   public int compare(ExprValue other) {
-    return timestamp.compareTo(other.timestampValue());
+    return timestamp.compareTo(other.timestampValue().atZone(ZONE).toInstant());
   }
 
   @Override
   public boolean equal(ExprValue other) {
-    return timestamp.equals(other.timestampValue());
+    return timestamp.equals(other.timestampValue().atZone(ZONE).toInstant());
   }
 
   @Override

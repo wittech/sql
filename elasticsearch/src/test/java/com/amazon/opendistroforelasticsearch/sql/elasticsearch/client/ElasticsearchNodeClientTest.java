@@ -16,6 +16,7 @@
 
 package com.amazon.opendistroforelasticsearch.sql.elasticsearch.client;
 
+import static com.amazon.opendistroforelasticsearch.sql.elasticsearch.client.ElasticsearchClient.META_CLUSTER_NAME;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -28,28 +29,39 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprIntegerValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprTupleValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprValue;
+import com.amazon.opendistroforelasticsearch.sql.elasticsearch.data.value.ElasticsearchExprValueFactory;
 import com.amazon.opendistroforelasticsearch.sql.elasticsearch.mapping.IndexMapping;
-import com.amazon.opendistroforelasticsearch.sql.elasticsearch.request.ElasticsearchRequest;
+import com.amazon.opendistroforelasticsearch.sql.elasticsearch.request.ElasticsearchScrollRequest;
 import com.amazon.opendistroforelasticsearch.sql.elasticsearch.response.ElasticsearchResponse;
 import com.google.common.base.Charsets;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.io.Resources;
 import java.io.IOException;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.lucene.search.TotalHits;
+import org.elasticsearch.action.admin.indices.get.GetIndexResponse;
 import org.elasticsearch.action.search.ClearScrollRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.node.NodeClient;
+import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.ClusterState;
+import org.elasticsearch.cluster.metadata.AliasMetadata;
 import org.elasticsearch.cluster.metadata.IndexAbstraction;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.cluster.metadata.MappingMetadata;
 import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
+import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.common.xcontent.DeprecationHandler;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.common.xcontent.XContentParser;
@@ -73,6 +85,21 @@ class ElasticsearchNodeClientTest {
   @Mock(answer = RETURNS_DEEP_STUBS)
   private NodeClient nodeClient;
 
+  @Mock
+  private ElasticsearchExprValueFactory factory;
+
+  @Mock
+  private SearchHit searchHit;
+
+  @Mock
+  private ThreadContext threadContext;
+
+  @Mock
+  private GetIndexResponse indexResponse;
+
+  private ExprTupleValue exprTupleValue = ExprTupleValue.fromExprValueMap(ImmutableMap.of("id",
+      new ExprIntegerValue(1)));
+
   @Test
   public void getIndexMappings() throws IOException {
     URL url = Resources.getResource(TEST_MAPPING_FILE);
@@ -93,7 +120,7 @@ class ElasticsearchNodeClientTest {
     assertEquals("geo_point", indexMapping.getFieldType("location"));
     assertEquals("some_new_es_type_outside_type_system", indexMapping.getFieldType("new_field"));
     assertEquals("text", indexMapping.getFieldType("field with spaces"));
-    assertEquals("text", indexMapping.getFieldType("employer"));
+    assertEquals("text_keyword", indexMapping.getFieldType("employer"));
     assertEquals("keyword", indexMapping.getFieldType("employer.raw"));
     assertEquals("nested", indexMapping.getFieldType("projects"));
     assertEquals("boolean", indexMapping.getFieldType("projects.active"));
@@ -101,7 +128,7 @@ class ElasticsearchNodeClientTest {
     assertEquals("nested", indexMapping.getFieldType("projects.members"));
     assertEquals("text", indexMapping.getFieldType("projects.members.name"));
     assertEquals("object", indexMapping.getFieldType("manager"));
-    assertEquals("text", indexMapping.getFieldType("manager.name"));
+    assertEquals("text_keyword", indexMapping.getFieldType("manager.name"));
     assertEquals("keyword", indexMapping.getFieldType("manager.name.keyword"));
     assertEquals("keyword", indexMapping.getFieldType("manager.address"));
     assertEquals("long", indexMapping.getFieldType("manager.salary"));
@@ -153,9 +180,11 @@ class ElasticsearchNodeClientTest {
     when(searchResponse.getHits())
         .thenReturn(
             new SearchHits(
-                new SearchHit[] {new SearchHit(1)},
+                new SearchHit[] {searchHit},
                 new TotalHits(1L, TotalHits.Relation.EQUAL_TO),
                 1.0F));
+    when(searchHit.getSourceAsString()).thenReturn("{\"id\", 1}");
+    when(factory.construct(any())).thenReturn(exprTupleValue);
 
     // Mock second scroll request followed
     SearchResponse scrollResponse = mock(SearchResponse.class);
@@ -164,13 +193,13 @@ class ElasticsearchNodeClientTest {
     when(scrollResponse.getHits()).thenReturn(SearchHits.empty());
 
     // Verify response for first scroll request
-    ElasticsearchRequest request = new ElasticsearchRequest("test");
+    ElasticsearchScrollRequest request = new ElasticsearchScrollRequest("test", factory);
     ElasticsearchResponse response1 = client.search(request);
     assertFalse(response1.isEmpty());
 
-    Iterator<SearchHit> hits = response1.iterator();
+    Iterator<ExprValue> hits = response1.iterator();
     assertTrue(hits.hasNext());
-    assertEquals(new SearchHit(1), hits.next());
+    assertEquals(exprTupleValue, hits.next());
     assertFalse(hits.hasNext());
 
     // Verify response for second scroll request
@@ -182,6 +211,7 @@ class ElasticsearchNodeClientTest {
   void schedule() {
     ThreadPool threadPool = mock(ThreadPool.class);
     when(nodeClient.threadPool()).thenReturn(threadPool);
+    when(threadPool.getThreadContext()).thenReturn(threadContext);
 
     doAnswer(
         invocation -> {
@@ -208,7 +238,7 @@ class ElasticsearchNodeClientTest {
 
     ElasticsearchNodeClient client =
         new ElasticsearchNodeClient(mock(ClusterService.class), nodeClient);
-    ElasticsearchRequest request = new ElasticsearchRequest("test");
+    ElasticsearchScrollRequest request = new ElasticsearchScrollRequest("test", factory);
     request.setScrollId("scroll123");
     client.cleanup(request);
     assertFalse(request.isScrollStarted());
@@ -224,9 +254,42 @@ class ElasticsearchNodeClientTest {
     ElasticsearchNodeClient client =
         new ElasticsearchNodeClient(mock(ClusterService.class), nodeClient);
 
-    ElasticsearchRequest request = new ElasticsearchRequest("test");
+    ElasticsearchScrollRequest request = new ElasticsearchScrollRequest("test", factory);
     client.cleanup(request);
     verify(nodeClient, never()).prepareClearScroll();
+  }
+
+  @Test
+  void getIndices() {
+    AliasMetadata aliasMetadata = mock(AliasMetadata.class);
+    ImmutableOpenMap.Builder<String, List<AliasMetadata>> builder = ImmutableOpenMap.builder();
+    builder.fPut("index",Arrays.asList(aliasMetadata));
+    final ImmutableOpenMap<String, List<AliasMetadata>> openMap = builder.build();
+    when(aliasMetadata.alias()).thenReturn("index_alias");
+    when(nodeClient.admin().indices()
+        .prepareGetIndex()
+        .setLocal(true)
+        .get()).thenReturn(indexResponse);
+    when(indexResponse.getIndices()).thenReturn(new String[] {"index"});
+    when(indexResponse.aliases()).thenReturn(openMap);
+
+    ElasticsearchNodeClient client =
+        new ElasticsearchNodeClient(mock(ClusterService.class), nodeClient);
+    final List<String> indices = client.indices();
+    assertEquals(2, indices.size());
+  }
+
+  @Test
+  void meta() {
+    ClusterName clusterName = mock(ClusterName.class);
+    ClusterService mockService = mock(ClusterService.class);
+    when(clusterName.value()).thenReturn("cluster-name");
+    when(mockService.getClusterName()).thenReturn(clusterName);
+
+    ElasticsearchNodeClient client =
+        new ElasticsearchNodeClient(mockService, nodeClient);
+    final Map<String, String> meta = client.meta();
+    assertEquals("cluster-name", meta.get(META_CLUSTER_NAME));
   }
 
   private ElasticsearchNodeClient mockClient(String indexName, String mappings) {

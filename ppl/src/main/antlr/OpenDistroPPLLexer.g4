@@ -28,6 +28,9 @@ STATS:                              'STATS';
 DEDUP:                              'DEDUP';
 SORT:                               'SORT';
 EVAL:                               'EVAL';
+HEAD:                               'HEAD';
+TOP:                                'TOP';
+RARE:                               'RARE';
 
 // COMMAND ASSIST KEYWORDS
 AS:                                 'AS';
@@ -48,11 +51,13 @@ NUM:                                'NUM';
 
 // ARGUMENT KEYWORDS
 KEEPEMPTY:                          'KEEPEMPTY';
+KEEPLAST:                           'KEEPLAST';
 CONSECUTIVE:                        'CONSECUTIVE';
 DEDUP_SPLITVALUES:                  'DEDUP_SPLITVALUES';
 PARTITIONS:                         'PARTITIONS';
 ALLNUM:                             'ALLNUM';
 DELIM:                              'DELIM';
+WHILE:                              'WHILE';
 
 // COMPARISON FUNCTION KEYWORDS
 CASE:                               'CASE';
@@ -65,7 +70,31 @@ AND:                                'AND';
 XOR:                                'XOR';
 TRUE:                               'TRUE';
 FALSE:                              'FALSE';
-LIKE:                               'LIKE';
+REGEXP:                             'REGEXP';
+
+// DATETIME, INTERVAL AND UNIT KEYWORDS
+DATETIME:                           'DATETIME';
+INTERVAL:                           'INTERVAL';
+MICROSECOND:                        'MICROSECOND';
+SECOND:                             'SECOND';
+MINUTE:                             'MINUTE';
+HOUR:                               'HOUR';
+DAY:                                'DAY';
+WEEK:                               'WEEK';
+MONTH:                              'MONTH';
+QUARTER:                            'QUARTER';
+YEAR:                               'YEAR';
+SECOND_MICROSECOND:                 'SECOND_MICROSECOND';
+MINUTE_MICROSECOND:                 'MINUTE_MICROSECOND';
+MINUTE_SECOND:                      'MINUTE_SECOND';
+HOUR_MICROSECOND:                   'HOUR_MICROSECOND';
+HOUR_SECOND:                        'HOUR_SECOND';
+HOUR_MINUTE:                        'HOUR_MINUTE';
+DAY_MICROSECOND:                    'DAY_MICROSECOND';
+DAY_SECOND:                         'DAY_SECOND';
+DAY_MINUTE:                         'DAY_MINUTE';
+DAY_HOUR:                           'DAY_HOUR';
+YEAR_MONTH:                         'YEAR_MONTH';
 
 // DATASET TYPES
 DATAMODEL:                          'DATAMODEL';
@@ -168,13 +197,51 @@ RADIANS:                            'RADIANS';
 SIN:                                'SIN';
 TAN:                                'TAN';
 
+// DATE AND TIME FUNCTIONS
+ADDDATE:                            'ADDDATE';
+DATE:                               'DATE';
+DATE_ADD:                           'DATE_ADD';
+DATE_SUB:                           'DATE_SUB';
+DAYOFMONTH:                         'DAYOFMONTH';
+DAYOFWEEK:                          'DAYOFWEEK';
+DAYOFYEAR:                          'DAYOFYEAR';
+DAYNAME:                            'DAYNAME';
+FROM_DAYS:                          'FROM_DAYS';
+MONTHNAME:                          'MONTHNAME';
+SUBDATE:                            'SUBDATE';
+TIME:                               'TIME';
+TIME_TO_SEC:                        'TIME_TO_SEC';
+TIMESTAMP:                          'TIMESTAMP';
+DATE_FORMAT:                        'DATE_FORMAT';
+TO_DAYS:                            'TO_DAYS';
+
+// TEXT FUNCTIONS
+SUBSTR:                             'SUBSTR';
+SUBSTRING:                          'SUBSTRING';
+LTRIM:                              'LTRIM';
+RTRIM:                              'RTRIM';
+TRIM:                               'TRIM';
+TO:                                 'TO';
+LOWER:                              'LOWER';
+UPPER:                              'UPPER';
+CONCAT:                             'CONCAT';
+CONCAT_WS:                          'CONCAT_WS';
+LENGTH:                             'LENGTH';
+STRCMP:                             'STRCMP';
+RIGHT:                              'RIGHT';
+
+// BOOL FUNCTIONS
+LIKE:                               'LIKE';
+ISNULL:                             'ISNULL';
+ISNOTNULL:                          'ISNOTNULL';
+
 // LITERALS AND VALUES
 //STRING_LITERAL:                     DQUOTA_STRING | SQUOTA_STRING | BQUOTA_STRING;
 ID:                                 ID_LITERAL;
 INTEGER_LITERAL:                    DEC_DIGIT+;
 DECIMAL_LITERAL:                    (DEC_DIGIT+)? '.' DEC_DIGIT+;
 
-fragment ID_LITERAL:                [A-Z_]+[A-Z_$0-9@\-]*;
+fragment ID_LITERAL:                [@*A-Z]+?[*A-Z_\-0-9]*;
 DQUOTA_STRING:                      '"' ( '\\'. | '""' | ~('"'| '\\') )* '"';
 SQUOTA_STRING:                      '\'' ('\\'. | '\'\'' | ~('\'' | '\\'))* '\'';
 BQUOTA_STRING:                      '`' ( '\\'. | '``' | ~('`'|'\\'))* '`';

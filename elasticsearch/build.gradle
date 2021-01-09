@@ -14,12 +14,13 @@ dependencies {
     compile "io.github.resilience4j:resilience4j-retry:1.5.0"
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.10.4'
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.10.4'
+    compile group: 'org.json', name: 'json', version:'20180813'
     compileOnly group: 'org.elasticsearch.client', name: 'elasticsearch-rest-high-level-client', version: "${es_version}"
 
     testImplementation('org.junit.jupiter:junit-jupiter:5.6.2')
     testCompile group: 'org.hamcrest', name: 'hamcrest-library', version: '2.1'
-    testCompile group: 'org.mockito', name: 'mockito-core', version: '3.3.3'
-    testCompile group: 'org.mockito', name: 'mockito-junit-jupiter', version: '3.3.3'
+    testCompile group: 'org.mockito', name: 'mockito-core', version: '3.5.0'
+    testCompile group: 'org.mockito', name: 'mockito-junit-jupiter', version: '3.5.0'
     testCompile group: 'org.elasticsearch.client', name: 'elasticsearch-rest-high-level-client', version: "${es_version}"
 }
 
@@ -27,6 +28,7 @@ test {
     useJUnitPlatform()
     testLogging {
         events "passed", "skipped", "failed"
+        exceptionFormat "full"
     }
 }
 
@@ -36,6 +38,7 @@ jacoco {
 jacocoTestReport {
     reports {
         html.enabled true
+        xml.enabled true
     }
     afterEvaluate {
         classDirectories.setFrom(files(classDirectories.files.collect {
@@ -53,9 +56,13 @@ jacocoTestCoverageVerification {
                     'com.amazon.opendistroforelasticsearch.sql.elasticsearch.security.SecurityAccess'
             ]
             limit {
+                counter = 'LINE'
                 minimum = 1.0
             }
-
+            limit {
+                counter = 'BRANCH'
+                minimum = 1.0
+            }
         }
     }
     afterEvaluate {

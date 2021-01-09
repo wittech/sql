@@ -15,6 +15,9 @@
 
 package com.amazon.opendistroforelasticsearch.sql.utils;
 
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprBooleanValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprIntegerValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprValue;
 import java.util.regex.Pattern;
 import lombok.experimental.UtilityClass;
 
@@ -27,8 +30,20 @@ public class OperatorUtils {
    * @param pattern string pattern to match.
    * @return if text matches pattern returns true; else return false.
    */
-  public static boolean matches(String pattern, String text) {
-    return Pattern.compile(patternToRegex(pattern)).matcher(text).matches();
+  public static ExprBooleanValue matches(ExprValue text, ExprValue pattern) {
+    return ExprBooleanValue
+        .of(Pattern.compile(patternToRegex(pattern.stringValue())).matcher(text.stringValue())
+            .matches());
+  }
+
+  /**
+   * Checks if text matches regular expression pattern.
+   * @param pattern string pattern to match.
+   * @return if text matches pattern returns true; else return false.
+   */
+  public static ExprIntegerValue matchesRegexp(ExprValue text, ExprValue pattern) {
+    return new ExprIntegerValue(Pattern.compile(pattern.stringValue()).matcher(text.stringValue())
+                    .matches() ? 1 : 0);
   }
 
   private static final char DEFAULT_ESCAPE = '\\';

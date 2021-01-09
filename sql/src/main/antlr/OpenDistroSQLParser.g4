@@ -39,7 +39,7 @@ root
 
 //    Only SELECT
 sqlStatement
-    : dmlStatement
+    : dmlStatement | adminStatement
     ;
 
 dmlStatement
@@ -55,28 +55,122 @@ selectStatement
     : querySpecification                                 #simpleSelect
     ;
 
+adminStatement
+    : showStatement
+    | describeStatement
+    ;
+
+showStatement
+    : SHOW TABLES tableFilter?
+    ;
+
+describeStatement
+    : DESCRIBE TABLES tableFilter columnFilter?
+    ;
+
+columnFilter
+    : COLUMNS LIKE showDescribePattern
+    ;
+
+tableFilter
+    : LIKE showDescribePattern
+    ;
+
+showDescribePattern
+    : oldID=compatibleID | stringLiteral
+    ;
+
+compatibleID
+    : (MODULE | ID)+?
+    ;
 
 //    Select Statement's Details
 
 querySpecification
     : selectClause
       fromClause?
+      limitClause?
     ;
 
 selectClause
-    : SELECT selectElements
+    : SELECT selectSpec? selectElements
+    ;
+
+selectSpec
+    : (ALL | DISTINCT)
     ;
 
 selectElements
-    : (star=STAR | selectElement) (',' selectElement)*
+    : (star=STAR | selectElement) (COMMA selectElement)*
     ;
 
 selectElement
-    : expression                                         #selectExpressionElement
+    : expression (AS? alias)?
     ;
 
 fromClause
-    : FROM tableName
+    : FROM relation
+      (whereClause)?
+      (groupByClause)?
+      (havingClause)?
+      (orderByClause)? // Place it under FROM for now but actually not necessary ex. A UNION B ORDER BY
+    ;
+
+relation
+    : tableName (AS? alias)?                                                #tableAsRelation
+    | LR_BRACKET subquery=querySpecification RR_BRACKET AS? alias           #subqueryAsRelation
+    ;
+
+whereClause
+    : WHERE expression
+    ;
+
+groupByClause
+    : GROUP BY groupByElements
+    ;
+
+groupByElements
+    : groupByElement (COMMA groupByElement)*
+    ;
+
+groupByElement
+    : expression
+    ;
+
+havingClause
+    : HAVING expression
+    ;
+
+orderByClause
+    : ORDER BY orderByElement (COMMA orderByElement)*
+    ;
+
+orderByElement
+    : expression order=(ASC | DESC)? (NULLS (FIRST | LAST))?
+    ;
+
+limitClause
+    : LIMIT (offset=decimalLiteral COMMA)? limit=decimalLiteral
+    | LIMIT limit=decimalLiteral OFFSET offset=decimalLiteral
+    ;
+
+//  Window Function's Details
+windowFunctionClause
+    : function=windowFunction overClause
+    ;
+
+windowFunction
+    : functionName=(ROW_NUMBER | RANK | DENSE_RANK)
+        LR_BRACKET functionArgs? RR_BRACKET              #scalarWindowFunction
+    | aggregateFunction                                  #aggregateWindowFunction
+    ;
+
+overClause
+    : OVER LR_BRACKET partitionByClause? orderByClause? RR_BRACKET
+    ;
+
+partitionByClause
+    : PARTITION BY expression (COMMA expression)*
     ;
 
 
@@ -88,8 +182,9 @@ constant
     | sign? realLiteral         #signedReal
     | booleanLiteral            #boolean
     | datetimeLiteral           #datetime
+    | intervalLiteral           #interval
+    | nullLiteral               #null
     // Doesn't support the following types for now
-    //| nullLiteral               #null
     //| BIT_STRING
     //| NOT? nullLiteral=(NULL_LITERAL | NULL_SPEC_LITERAL)
     //| LEFT_BRACE dateType=(D | T | TS | DATE | TIME | TIMESTAMP) stringLiteral RIGHT_BRACE
@@ -138,19 +233,37 @@ timestampLiteral
     : TIMESTAMP timestamp=stringLiteral
     ;
 
+intervalLiteral
+    : INTERVAL expression intervalUnit
+    ;
+
+intervalUnit
+    : MICROSECOND | SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR | SECOND_MICROSECOND
+    | MINUTE_MICROSECOND | MINUTE_SECOND | HOUR_MICROSECOND | HOUR_SECOND | HOUR_MINUTE | DAY_MICROSECOND
+    | DAY_SECOND | DAY_MINUTE | DAY_HOUR | YEAR_MONTH
+    ;
+
 //    Expressions, predicates
 
 // Simplified approach for expression
 expression
-    : predicate                                                     #predicateExpression
+    : NOT expression                                                #notExpression
+    | left=expression AND right=expression                          #andExpression
+    | left=expression OR right=expression                           #orExpression
+    | predicate                                                     #predicateExpression
     ;
 
 predicate
     : expressionAtom                                                #expressionAtomPredicate
+    | left=predicate comparisonOperator right=predicate             #binaryComparisonPredicate
+    | predicate IS nullNotnull                                      #isNullPredicate
+    | left=predicate NOT? LIKE right=predicate                      #likePredicate
+    | left=predicate REGEXP right=predicate                         #regexpPredicate
     ;
 
 expressionAtom
     : constant                                                      #constantExpressionAtom
+    | columnName                                                    #fullColumnNameExpressionAtom
     | functionCall                                                  #functionCallExpressionAtom
     | LR_BRACKET expression RR_BRACKET                              #nestedExpressionAtom
     | left=expressionAtom mathOperator right=expressionAtom         #mathExpressionAtom
@@ -160,13 +273,65 @@ mathOperator
     : PLUS | MINUS | STAR | DIVIDE | MODULE
     ;
 
+comparisonOperator
+    : '=' | '>' | '<' | '<' '=' | '>' '='
+    | '<' '>' | '!' '='
+    ;
+
+nullNotnull
+    : NOT? NULL_LITERAL
+    ;
+
 functionCall
     : scalarFunctionName LR_BRACKET functionArgs? RR_BRACKET        #scalarFunctionCall
+    | specificFunction                                              #specificFunctionCall
+    | windowFunctionClause                                          #windowFunctionCall
+    | aggregateFunction                                             #aggregateFunctionCall
+    | aggregateFunction (orderByClause)? filterClause               #filteredAggregationFunctionCall
     ;
 
 scalarFunctionName
     : mathematicalFunctionName
     | dateTimeFunctionName
+    | textFunctionName
+    ;
+
+specificFunction
+    : CASE expression caseFuncAlternative+
+        (ELSE elseArg=functionArg)? END                               #caseFunctionCall
+    | CASE caseFuncAlternative+
+        (ELSE elseArg=functionArg)? END                               #caseFunctionCall
+    | CAST '(' expression AS convertedDataType ')'                    #dataTypeFunctionCall
+    ;
+
+convertedDataType
+    : typeName=DATE
+    | typeName=TIME
+    | typeName=TIMESTAMP
+    | typeName=INT
+    | typeName=DOUBLE
+    | typeName=LONG
+    | typeName=FLOAT
+    | typeName=STRING
+    | typeName=BOOLEAN
+    ;
+
+caseFuncAlternative
+    : WHEN condition=functionArg
+      THEN consequent=functionArg
+    ;
+
+aggregateFunction
+    : functionName=aggregationFunctionName LR_BRACKET functionArg RR_BRACKET #regularAggregateFunctionCall
+    | COUNT LR_BRACKET STAR RR_BRACKET                                       #countStarFunctionCall
+    ;
+
+filterClause
+    : FILTER LR_BRACKET WHERE expression RR_BRACKET
+    ;
+
+aggregationFunctionName
+    : AVG | COUNT | SUM | MIN | MAX
     ;
 
 mathematicalFunctionName
@@ -180,11 +345,18 @@ trigonometricFunctionName
     ;
 
 dateTimeFunctionName
-    : DAYOFMONTH
+    : ADDDATE | DATE | DATE_ADD | DATE_SUB | DAY | DAYNAME | DAYOFMONTH | DAYOFWEEK | DAYOFYEAR | FROM_DAYS
+    | HOUR | MICROSECOND | MINUTE | MONTH | MONTHNAME | QUARTER | SECOND | SUBDATE | TIME | TIME_TO_SEC
+    | TIMESTAMP | TO_DAYS | YEAR | WEEK | DATE_FORMAT
+    ;
+
+textFunctionName
+    : SUBSTR | SUBSTRING | TRIM | LTRIM | RTRIM | LOWER | UPPER
+    | CONCAT | CONCAT_WS | SUBSTR | LENGTH | STRCMP | RIGHT
     ;
 
 functionArgs
-    : (functionArg (COMMA functionArg)*)?
+    : functionArg (COMMA functionArg)*
     ;
 
 functionArg

@@ -30,18 +30,36 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.amazon.opendistroforelasticsearch.sql.data.type.ExprType;
 import java.util.Map;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 
 public class SymbolTableTest {
 
-  private final SymbolTable symbolTable = new SymbolTable();
+  private SymbolTable symbolTable;
+
+  @BeforeEach
+  public void setup() {
+    symbolTable = new SymbolTable();
+  }
 
   @Test
   public void defineFieldSymbolShouldBeAbleToResolve() {
     defineSymbolShouldBeAbleToResolve(new Symbol(Namespace.FIELD_NAME, "age"), INTEGER);
   }
 
+  @Test
+  public void removeSymbolCannotBeResolve() {
+    symbolTable.store(new Symbol(Namespace.FIELD_NAME, "age"), INTEGER);
+
+    Optional<ExprType> age = symbolTable.lookup(new Symbol(Namespace.FIELD_NAME, "age"));
+    assertTrue(age.isPresent());
+
+    symbolTable.remove(new Symbol(Namespace.FIELD_NAME, "age"));
+    age = symbolTable.lookup(new Symbol(Namespace.FIELD_NAME, "age"));
+    assertFalse(age.isPresent());
+  }
 
   @Test
   public void defineFieldSymbolShouldBeAbleToResolveByPrefix() {
@@ -57,6 +75,26 @@ public class SymbolTableTest {
         allOf(
             aMapWithSize(1),
             hasEntry("s.projects.active", BOOLEAN)
+        )
+    );
+  }
+
+  @Test
+  public void lookupAllFieldsReturnUnnestedFields() {
+    symbolTable.store(new Symbol(Namespace.FIELD_NAME, "active"), BOOLEAN);
+    symbolTable.store(new Symbol(Namespace.FIELD_NAME, "active.manager"), STRING);
+    symbolTable.store(new Symbol(Namespace.FIELD_NAME, "active.manager.name"), STRING);
+    symbolTable.store(new Symbol(Namespace.FIELD_NAME, "s.address"), BOOLEAN);
+
+    Map<String, ExprType> typeByName =
+        symbolTable.lookupAllFields(Namespace.FIELD_NAME);
+
+    assertThat(
+        typeByName,
+        allOf(
+            aMapWithSize(2),
+            hasEntry("active", BOOLEAN),
+            hasEntry("s.address", BOOLEAN)
         )
     );
   }

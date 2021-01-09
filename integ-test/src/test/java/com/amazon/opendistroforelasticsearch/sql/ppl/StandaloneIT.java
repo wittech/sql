@@ -19,6 +19,7 @@ package com.amazon.opendistroforelasticsearch.sql.ppl;
 import static com.amazon.opendistroforelasticsearch.sql.protocol.response.format.JsonResponseFormatter.Style.PRETTY;
 
 import com.amazon.opendistroforelasticsearch.sql.common.response.ResponseListener;
+import com.amazon.opendistroforelasticsearch.sql.common.setting.Settings;
 import com.amazon.opendistroforelasticsearch.sql.elasticsearch.client.ElasticsearchClient;
 import com.amazon.opendistroforelasticsearch.sql.elasticsearch.client.ElasticsearchRestClient;
 import com.amazon.opendistroforelasticsearch.sql.elasticsearch.executor.ElasticsearchExecutionEngine;
@@ -32,11 +33,15 @@ import com.amazon.opendistroforelasticsearch.sql.ppl.domain.PPLQueryRequest;
 import com.amazon.opendistroforelasticsearch.sql.protocol.response.QueryResult;
 import com.amazon.opendistroforelasticsearch.sql.protocol.response.format.SimpleJsonResponseFormatter;
 import com.amazon.opendistroforelasticsearch.sql.storage.StorageEngine;
+import com.google.common.collect.ImmutableMap;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.elasticsearch.client.Node;
 import org.elasticsearch.client.Request;
 import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -55,25 +60,19 @@ public class StandaloneIT extends PPLIntegTestCase {
 
   @Override
   public void init() {
-    restClient =
-        new RestHighLevelClient(RestClient.builder(client().getNodes().toArray(new Node[0])));
+    // Using client() defined in ODFERestTestCase.
+    restClient = new InternalRestHighLevelClient(client());
 
     ElasticsearchClient client = new ElasticsearchRestClient(restClient);
     AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
     context.registerBean(StorageEngine.class,
-        () -> new ElasticsearchStorageEngine(client));
+        () -> new ElasticsearchStorageEngine(client, defaultSettings()));
     context.registerBean(ExecutionEngine.class, () -> new ElasticsearchExecutionEngine(client,
         new ElasticsearchExecutionProtector(new AlwaysHealthyMonitor())));
     context.register(PPLServiceConfig.class);
     context.refresh();
 
     pplService = context.getBean(PPLService.class);
-  }
-
-  @AfterEach
-  public void tearDown() throws Exception {
-    restClient.close();
-    super.tearDown();
   }
 
   @Test
@@ -88,15 +87,21 @@ public class StandaloneIT extends PPLIntegTestCase {
     String actual = executeByStandaloneQueryEngine("source=test | fields name");
     assertEquals(
         "{\n"
-            + "  \"schema\": [{\n"
-            + "    \"name\": \"name\",\n"
-            + "    \"type\": \"string\"\n"
-            + "  }],\n"
-            + "  \"total\": 2,\n"
-            + "  \"datarows\": [\n"
-            + "    [\"hello\"],\n"
-            + "    [\"world\"]\n"
+            + "  \"schema\": [\n"
+            + "    {\n"
+            + "      \"name\": \"name\",\n"
+            + "      \"type\": \"string\"\n"
+            + "    }\n"
             + "  ],\n"
+            + "  \"datarows\": [\n"
+            + "    [\n"
+            + "      \"hello\"\n"
+            + "    ],\n"
+            + "    [\n"
+            + "      \"world\"\n"
+            + "    ]\n"
+            + "  ],\n"
+            + "  \"total\": 2,\n"
             + "  \"size\": 2\n"
             + "}",
         actual);
@@ -105,12 +110,12 @@ public class StandaloneIT extends PPLIntegTestCase {
   private String executeByStandaloneQueryEngine(String query) {
     AtomicReference<String> actual = new AtomicReference<>();
     pplService.execute(
-        new PPLQueryRequest(query, null),
+        new PPLQueryRequest(query, null, null),
         new ResponseListener<QueryResponse>() {
 
           @Override
           public void onResponse(QueryResponse response) {
-            QueryResult result = new QueryResult(response.getResults());
+            QueryResult result = new QueryResult(response.getSchema(), response.getResults());
             String json = new SimpleJsonResponseFormatter(PRETTY).format(result);
             actual.set(json);
           }
@@ -121,5 +126,27 @@ public class StandaloneIT extends PPLIntegTestCase {
           }
         });
     return actual.get();
+  }
+
+  private Settings defaultSettings() {
+    return new Settings() {
+      private final Map<Key, Integer> defaultSettings = new ImmutableMap.Builder<Key, Integer>()
+          .put(Key.QUERY_SIZE_LIMIT, 200)
+          .build();
+
+      @Override
+      public <T> T getSettingValue(Key key) {
+        return (T) defaultSettings.get(key);
+      }
+    };
+  }
+
+  /**
+   * Internal RestHighLevelClient only for testing purpose.
+   */
+  static class InternalRestHighLevelClient extends RestHighLevelClient {
+    public InternalRestHighLevelClient(RestClient restClient) {
+      super(restClient, RestClient::close, Collections.emptyList());
+    }
   }
 }

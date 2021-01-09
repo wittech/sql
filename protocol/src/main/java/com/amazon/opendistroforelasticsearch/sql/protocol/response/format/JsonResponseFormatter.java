@@ -16,11 +16,15 @@
 
 package com.amazon.opendistroforelasticsearch.sql.protocol.response.format;
 
+import static com.amazon.opendistroforelasticsearch.sql.protocol.response.format.ErrorFormatter.compactFormat;
+import static com.amazon.opendistroforelasticsearch.sql.protocol.response.format.ErrorFormatter.compactJsonify;
+import static com.amazon.opendistroforelasticsearch.sql.protocol.response.format.ErrorFormatter.prettyFormat;
+import static com.amazon.opendistroforelasticsearch.sql.protocol.response.format.ErrorFormatter.prettyJsonify;
 import static com.amazon.opendistroforelasticsearch.sql.protocol.response.format.JsonResponseFormatter.Style.PRETTY;
 
-import lombok.Getter;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import lombok.RequiredArgsConstructor;
-import org.json.JSONObject;
 
 /**
  * Abstract class for all JSON formatter.
@@ -42,7 +46,6 @@ public abstract class JsonResponseFormatter<R> implements ResponseFormatter<R> {
    */
   private final Style style;
 
-
   @Override
   public String format(R response) {
     return jsonify(buildJsonObject(response));
@@ -50,9 +53,8 @@ public abstract class JsonResponseFormatter<R> implements ResponseFormatter<R> {
 
   @Override
   public String format(Throwable t) {
-    JsonError error = new JsonError(t.getClass().getSimpleName(),
-        t.getMessage());
-    return jsonify(error);
+    return AccessController.doPrivileged((PrivilegedAction<String>) () ->
+        (style == PRETTY) ? prettyFormat(t) : compactFormat(t));
   }
 
   /**
@@ -63,16 +65,8 @@ public abstract class JsonResponseFormatter<R> implements ResponseFormatter<R> {
    */
   protected abstract Object buildJsonObject(R response);
 
-
-  private String jsonify(Object jsonObject) {
-    JSONObject json = new JSONObject(jsonObject);
-    return (style == PRETTY) ? json.toString(2) : json.toString();
-  }
-
-  @RequiredArgsConstructor
-  @Getter
-  public static class JsonError {
-    private final String type;
-    private final String reason;
+  protected String jsonify(Object jsonObject) {
+    return AccessController.doPrivileged((PrivilegedAction<String>) () ->
+        (style == PRETTY) ? prettyJsonify(jsonObject) : compactJsonify(jsonObject));
   }
 }

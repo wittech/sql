@@ -15,6 +15,7 @@
 
 package com.amazon.opendistroforelasticsearch.sql.sql;
 
+import static com.amazon.opendistroforelasticsearch.sql.legacy.TestsConstants.TEST_INDEX_BANK;
 import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.RestSqlAction.QUERY_API_ENDPOINT;
 import static com.amazon.opendistroforelasticsearch.sql.util.MatcherUtils.rows;
 import static com.amazon.opendistroforelasticsearch.sql.util.MatcherUtils.schema;
@@ -38,23 +39,33 @@ public class MathematicalFunctionIT extends SQLIntegTestCase {
   public void init() throws Exception {
     super.init();
     TestUtils.enableNewQueryEngine(client());
+    loadIndex(Index.BANK);
+  }
+
+  @Test
+  public void testPI() throws IOException {
+    JSONObject result =
+            executeQuery(String.format("SELECT PI() FROM %s HAVING (COUNT(1) > 0)",TEST_INDEX_BANK) );
+    verifySchema(result,
+            schema("PI()", null, "double"));
+    verifyDataRows(result, rows(3.141592653589793));
   }
 
   @Test
   public void testConv() throws IOException {
     JSONObject result = executeQuery("select conv(11, 10, 16)");
-    verifySchema(result, schema("conv(11, 10, 16)", null, "string"));
+    verifySchema(result, schema("conv(11, 10, 16)", null, "keyword"));
     verifyDataRows(result, rows("b"));
 
     result = executeQuery("select conv(11, 16, 10)");
-    verifySchema(result, schema("conv(11, 16, 10)", null, "string"));
+    verifySchema(result, schema("conv(11, 16, 10)", null, "keyword"));
     verifyDataRows(result, rows("17"));
   }
 
   @Test
   public void testCrc32() throws IOException {
     JSONObject result = executeQuery("select crc32('MySQL')");
-    verifySchema(result, schema("crc32(\"MySQL\")", null, "long"));
+    verifySchema(result, schema("crc32('MySQL')", null, "long"));
     verifyDataRows(result, rows(3259397556L));
   }
 
@@ -80,7 +91,7 @@ public class MathematicalFunctionIT extends SQLIntegTestCase {
   public void testRound() throws IOException {
     JSONObject result = executeQuery("select round(56.78)");
     verifySchema(result, schema("round(56.78)", null, "double"));
-    verifyDataRows(result, rows(57));
+    verifyDataRows(result, rows(57.0));
 
     result = executeQuery("select round(56.78, 1)");
     verifySchema(result, schema("round(56.78, 1)", null, "double"));
@@ -88,7 +99,7 @@ public class MathematicalFunctionIT extends SQLIntegTestCase {
 
     result = executeQuery("select round(56.78, -1)");
     verifySchema(result, schema("round(56.78, -1)", null, "double"));
-    verifyDataRows(result, rows(60));
+    verifyDataRows(result, rows(60.0));
 
     result = executeQuery("select round(-56)");
     verifySchema(result, schema("round(-56)", null, "long"));
@@ -101,6 +112,14 @@ public class MathematicalFunctionIT extends SQLIntegTestCase {
     result = executeQuery("select round(-56, -1)");
     verifySchema(result, schema("round(-56, -1)", null, "long"));
     verifyDataRows(result, rows(-60));
+
+    result = executeQuery("select round(3.5)");
+    verifySchema(result, schema("round(3.5)", null, "double"));
+    verifyDataRows(result, rows(4.0));
+
+    result = executeQuery("select round(-3.5)");
+    verifySchema(result, schema("round(-3.5)", null, "double"));
+    verifyDataRows(result, rows(-4.0));
   }
 
   /**
@@ -125,7 +144,7 @@ public class MathematicalFunctionIT extends SQLIntegTestCase {
 
     result = executeQuery("select truncate(56.78, -1)");
     verifySchema(result, schema("truncate(56.78, -1)", null, "double"));
-    verifyDataRows(result, rows(50));
+    verifyDataRows(result, rows(50.0));
 
     result = executeQuery("select truncate(-56, 1)");
     verifySchema(result, schema("truncate(-56, 1)", null, "long"));

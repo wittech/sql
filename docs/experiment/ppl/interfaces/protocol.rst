@@ -43,7 +43,6 @@ PPL query::
           "type": "string"
         }
       ],
-      "total": 4,
       "datarows": [
         [
           "Amber",
@@ -62,6 +61,7 @@ PPL query::
           "Adams"
         ]
       ],
+      "total": 4,
       "size": 4
     }
 
@@ -94,7 +94,6 @@ PPL query::
           "type": "string"
         }
       ],
-      "total": 4,
       "datarows": [
         [
           "Amber",
@@ -113,6 +112,7 @@ PPL query::
           "Adams"
         ]
       ],
+      "total": 4,
       "size": 4
     }
 
@@ -127,7 +127,11 @@ PPL query::
     ... -X POST localhost:9200/_opendistro/_ppl \
     ... -d '{"query" : "source=unknown | fields firstname, lastname"}'
     {
-      "reason": "no such index [unknown]",
-      "type": "IndexNotFoundException"
+      "error": {
+        "reason": "Error occurred in Elasticsearch engine: no such index [unknown]",
+        "details": "org.elasticsearch.index.IndexNotFoundException: no such index [unknown]\nFor more details, please send request for Json format to see the raw response from elasticsearch engine.",
+        "type": "IndexNotFoundException"
+      },
+      "status": 404
     }
 

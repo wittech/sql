@@ -27,15 +27,26 @@ import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtil
 import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.LITERAL_TRUE;
 import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.booleanValue;
 import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.fromObjectValue;
+import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.missingValue;
 import static com.amazon.opendistroforelasticsearch.sql.data.type.ExprCoreType.BOOLEAN;
 import static com.amazon.opendistroforelasticsearch.sql.data.type.ExprCoreType.INTEGER;
 import static com.amazon.opendistroforelasticsearch.sql.data.type.ExprCoreType.STRING;
-
 import static com.amazon.opendistroforelasticsearch.sql.utils.ComparisonUtil.compare;
 import static com.amazon.opendistroforelasticsearch.sql.utils.OperatorUtils.matches;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprBooleanValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprByteValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprCollectionValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprDoubleValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprFloatValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprIntegerValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprLongValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprShortValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprStringValue;
+import com.amazon.opendistroforelasticsearch.sql.data.model.ExprTupleValue;
 import com.amazon.opendistroforelasticsearch.sql.data.model.ExprValue;
 import com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils;
 import com.amazon.opendistroforelasticsearch.sql.expression.DSL;
@@ -45,6 +56,7 @@ import com.amazon.opendistroforelasticsearch.sql.expression.FunctionExpression;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.sun.org.apache.xpath.internal.Arg;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
@@ -53,12 +65,34 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.stream.Stream;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.Mock;
 
 class BinaryPredicateOperatorTest extends ExpressionTestBase {
+
+  private static List<StringPatternPair> STRING_PATTERN_PAIRS = ImmutableList.of(
+          new StringPatternPair("Michael!", ".*"),
+          new StringPatternPair("new*\\n*line", "new\\\\*.\\\\*line"),
+          new StringPatternPair("a", "^[a-d]"),
+          new StringPatternPair("helo", "world"),
+          new StringPatternPair("a", "A"));
+
+  @AllArgsConstructor
+  @Getter
+  static class StringPatternPair {
+    private final String str;
+    private final String patt;
+
+    int regExpTest() {
+      return str.matches(patt) ? 1 : 0;
+    }
+  }
 
   private static Stream<Arguments> binaryPredicateArguments() {
     List<Boolean> booleans = Arrays.asList(true, false);
@@ -67,18 +101,27 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
   }
 
   private static Stream<Arguments> testEqualArguments() {
-    List<Object> arguments = Arrays.asList(1, 1L, 1F, 1D, "str", true, ImmutableList.of(1),
-        ImmutableMap.of("str", 1));
     Stream.Builder<Arguments> builder = Stream.builder();
-    for (Object argument : arguments) {
-      builder.add(Arguments.of(fromObjectValue(argument), fromObjectValue(argument)));
-    }
+    builder.add(Arguments.of(new ExprByteValue(1), new ExprByteValue(1)));
+    builder.add(Arguments.of(new ExprShortValue(1), new ExprShortValue(1)));
+    builder.add(Arguments.of(new ExprIntegerValue(1), new ExprIntegerValue(1)));
+    builder.add(Arguments.of(new ExprLongValue(1L), new ExprLongValue(1L)));
+    builder.add(Arguments.of(new ExprFloatValue(1F), new ExprFloatValue(1F)));
+    builder.add(Arguments.of(new ExprDoubleValue(1D), new ExprDoubleValue(1D)));
+    builder.add(Arguments.of(new ExprStringValue("str"), new ExprStringValue("str")));
+    builder.add(Arguments.of(ExprBooleanValue.of(true), ExprBooleanValue.of(true)));
+    builder.add(Arguments.of(new ExprCollectionValue(ImmutableList.of(new ExprIntegerValue(1))),
+        new ExprCollectionValue(ImmutableList.of(new ExprIntegerValue(1)))));
+    builder.add(Arguments.of(ExprTupleValue.fromExprValueMap(ImmutableMap.of("str",
+        new ExprIntegerValue(1))),
+        ExprTupleValue.fromExprValueMap(ImmutableMap.of("str", new ExprIntegerValue(1)))));
     return builder.build();
   }
 
   private static Stream<Arguments> testNotEqualArguments() {
     List<List<Object>> arguments = Arrays.asList(
-        Arrays.asList(1, 2), Arrays.asList(1L, 2L), Arrays.asList(1F, 2F), Arrays.asList(1D, 2D),
+        Arrays.asList((byte) 1, (byte) 2), Arrays.asList(1, 2), Arrays.asList(1L, 2L),
+        Arrays.asList(1F, 2F), Arrays.asList(1D, 2D),
         Arrays.asList("str0", "str1"), Arrays.asList(true, false),
         Arrays.asList(ImmutableList.of(1), ImmutableList.of(2)),
         Arrays.asList(ImmutableMap.of("str", 1), ImmutableMap.of("str", 2))
@@ -102,6 +145,9 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
     for (List<Object> argPair : arguments) {
       builder.add(Arguments.of(fromObjectValue(argPair.get(0)), fromObjectValue(argPair.get(1))));
     }
+    builder.add(Arguments.of(new ExprShortValue(1), new ExprShortValue(1)));
+    builder.add(Arguments.of(new ExprShortValue(1), new ExprShortValue(2)));
+    builder.add(Arguments.of(new ExprShortValue(2), new ExprShortValue(1)));
     return builder.build();
   }
 
@@ -127,7 +173,7 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
         dsl.and(DSL.literal(booleanValue(v1)), DSL.literal(booleanValue(v2)));
     assertEquals(BOOLEAN, and.type());
     assertEquals(v1 && v2, ExprValueUtils.getBooleanValue(and.valueOf(valueEnv())));
-    assertEquals(String.format("%s and %s", v1.toString(), v2.toString()), and.toString());
+    assertEquals(String.format("and(%s, %s)", v1.toString(), v2.toString()), and.toString());
   }
 
   @Test
@@ -200,7 +246,7 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
         dsl.or(DSL.literal(booleanValue(v1)), DSL.literal(booleanValue(v2)));
     assertEquals(BOOLEAN, or.type());
     assertEquals(v1 || v2, ExprValueUtils.getBooleanValue(or.valueOf(valueEnv())));
-    assertEquals(String.format("%s or %s", v1.toString(), v2.toString()), or.toString());
+    assertEquals(String.format("or(%s, %s)", v1.toString(), v2.toString()), or.toString());
   }
 
   @Test
@@ -275,7 +321,7 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
         dsl.xor(DSL.literal(booleanValue(v1)), DSL.literal(booleanValue(v2)));
     assertEquals(BOOLEAN, xor.type());
     assertEquals(v1 ^ v2, ExprValueUtils.getBooleanValue(xor.valueOf(valueEnv())));
-    assertEquals(String.format("%s xor %s", v1.toString(), v2.toString()), xor.toString());
+    assertEquals(String.format("xor(%s, %s)", v1.toString(), v2.toString()), xor.toString());
   }
 
   @Test
@@ -348,7 +394,7 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
     assertEquals(BOOLEAN, equal.type());
     assertEquals(v1.value().equals(v2.value()),
         ExprValueUtils.getBooleanValue(equal.valueOf(valueEnv())));
-    assertEquals(String.format("%s = %s", v1.toString(), v2.toString()), equal.toString());
+    assertEquals(String.format("=(%s, %s)", v1.toString(), v2.toString()), equal.toString());
   }
 
   @Test
@@ -356,38 +402,38 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
     FunctionExpression equal = dsl.equal(DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN),
         DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, equal.type());
-    assertEquals(LITERAL_TRUE, equal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, equal.valueOf(valueEnv()));
 
     equal = dsl.equal(DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN),
         DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, equal.type());
-    assertEquals(LITERAL_TRUE, equal.valueOf(valueEnv()));
+    assertEquals(LITERAL_NULL, equal.valueOf(valueEnv()));
 
     equal = dsl.equal(DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN),
         DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, equal.type());
-    assertEquals(LITERAL_FALSE, equal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, equal.valueOf(valueEnv()));
 
     equal = dsl.equal(DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN),
         DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, equal.type());
-    assertEquals(LITERAL_FALSE, equal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, equal.valueOf(valueEnv()));
 
     equal = dsl.equal(DSL.literal(LITERAL_TRUE), DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, equal.type());
-    assertEquals(LITERAL_FALSE, equal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, equal.valueOf(valueEnv()));
 
     equal = dsl.equal(DSL.literal(LITERAL_TRUE), DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, equal.type());
-    assertEquals(LITERAL_FALSE, equal.valueOf(valueEnv()));
+    assertEquals(LITERAL_NULL, equal.valueOf(valueEnv()));
 
     equal = dsl.equal(DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN), DSL.literal(LITERAL_TRUE));
     assertEquals(BOOLEAN, equal.type());
-    assertEquals(LITERAL_FALSE, equal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, equal.valueOf(valueEnv()));
 
     equal = dsl.equal(DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN), DSL.literal(LITERAL_TRUE));
     assertEquals(BOOLEAN, equal.type());
-    assertEquals(LITERAL_FALSE, equal.valueOf(valueEnv()));
+    assertEquals(LITERAL_NULL, equal.valueOf(valueEnv()));
   }
 
   @ParameterizedTest(name = "equal({0}, {1})")
@@ -397,7 +443,7 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
     assertEquals(BOOLEAN, notequal.type());
     assertEquals(!v1.value().equals(v2.value()),
         ExprValueUtils.getBooleanValue(notequal.valueOf(valueEnv())));
-    assertEquals(String.format("%s != %s", v1.toString(), v2.toString()), notequal.toString());
+    assertEquals(String.format("!=(%s, %s)", v1.toString(), v2.toString()), notequal.toString());
   }
 
   @Test
@@ -405,42 +451,42 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
     FunctionExpression notequal = dsl.notequal(DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN),
         DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, notequal.type());
-    assertEquals(LITERAL_FALSE, notequal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, notequal.valueOf(valueEnv()));
 
     notequal = dsl.notequal(DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN),
         DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, notequal.type());
-    assertEquals(LITERAL_FALSE, notequal.valueOf(valueEnv()));
+    assertEquals(LITERAL_NULL, notequal.valueOf(valueEnv()));
 
     notequal = dsl.notequal(DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN),
         DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, notequal.type());
-    assertEquals(LITERAL_TRUE, notequal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, notequal.valueOf(valueEnv()));
 
     notequal = dsl.notequal(DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN),
         DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, notequal.type());
-    assertEquals(LITERAL_TRUE, notequal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, notequal.valueOf(valueEnv()));
 
     notequal = dsl.notequal(DSL.literal(LITERAL_TRUE),
         DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, notequal.type());
-    assertEquals(LITERAL_TRUE, notequal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, notequal.valueOf(valueEnv()));
 
     notequal = dsl.notequal(DSL.literal(LITERAL_TRUE),
         DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN));
     assertEquals(BOOLEAN, notequal.type());
-    assertEquals(LITERAL_TRUE, notequal.valueOf(valueEnv()));
+    assertEquals(LITERAL_NULL, notequal.valueOf(valueEnv()));
 
     notequal = dsl.notequal(DSL.ref(BOOL_TYPE_MISSING_VALUE_FIELD, BOOLEAN),
         DSL.literal(LITERAL_TRUE));
     assertEquals(BOOLEAN, notequal.type());
-    assertEquals(LITERAL_TRUE, notequal.valueOf(valueEnv()));
+    assertEquals(LITERAL_MISSING, notequal.valueOf(valueEnv()));
 
     notequal = dsl.notequal(DSL.ref(BOOL_TYPE_NULL_VALUE_FIELD, BOOLEAN),
         DSL.literal(LITERAL_TRUE));
     assertEquals(BOOLEAN, notequal.type());
-    assertEquals(LITERAL_TRUE, notequal.valueOf(valueEnv()));
+    assertEquals(LITERAL_NULL, notequal.valueOf(valueEnv()));
   }
 
   @ParameterizedTest(name = "less({0}, {1})")
@@ -450,7 +496,7 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
     assertEquals(BOOLEAN, less.type());
     assertEquals(compare(v1, v2) < 0,
         ExprValueUtils.getBooleanValue(less.valueOf(valueEnv())));
-    assertEquals(String.format("%s < %s", v1.toString(), v2.toString()), less.toString());
+    assertEquals(String.format("<(%s, %s)", v1.toString(), v2.toString()), less.toString());
   }
 
   @Test
@@ -507,7 +553,7 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
     assertEquals(BOOLEAN, lte.type());
     assertEquals(compare(v1, v2) <= 0,
         ExprValueUtils.getBooleanValue(lte.valueOf(valueEnv())));
-    assertEquals(String.format("%s <= %s", v1.toString(), v2.toString()), lte.toString());
+    assertEquals(String.format("<=(%s, %s)", v1.toString(), v2.toString()), lte.toString());
   }
 
   @Test
@@ -564,7 +610,7 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
     assertEquals(BOOLEAN, greater.type());
     assertEquals(compare(v1, v2) > 0,
         ExprValueUtils.getBooleanValue(greater.valueOf(valueEnv())));
-    assertEquals(String.format("%s > %s", v1.toString(), v2.toString()), greater.toString());
+    assertEquals(String.format(">(%s, %s)", v1.toString(), v2.toString()), greater.toString());
   }
 
   @Test
@@ -621,7 +667,7 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
     assertEquals(BOOLEAN, gte.type());
     assertEquals(compare(v1, v2) >= 0,
         ExprValueUtils.getBooleanValue(gte.valueOf(valueEnv())));
-    assertEquals(String.format("%s >= %s", v1.toString(), v2.toString()), gte.toString());
+    assertEquals(String.format(">=(%s, %s)", v1.toString(), v2.toString()), gte.toString());
   }
 
   @Test
@@ -676,9 +722,8 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
   public void test_like(ExprValue v1, ExprValue v2) {
     FunctionExpression like = dsl.like(DSL.literal(v1), DSL.literal(v2));
     assertEquals(BOOLEAN, like.type());
-    assertEquals(matches(((String) v2.value()), (String) v1.value()),
-        ExprValueUtils.getBooleanValue(like.valueOf(valueEnv())));
-    assertEquals(String.format("%s like %s", v1.toString(), v2.toString()), like.toString());
+    assertEquals(matches(v1, v2), like.valueOf(valueEnv()));
+    assertEquals(String.format("like(%s, %s)", v1.toString(), v2.toString()), like.toString());
   }
 
   @Test
@@ -726,6 +771,32 @@ class BinaryPredicateOperatorTest extends ExpressionTestBase {
         DSL.ref(STRING_TYPE_NULL_VALUE_FILED, STRING));
     assertEquals(BOOLEAN, like.type());
     assertEquals(LITERAL_MISSING, like.valueOf(valueEnv()));
+  }
+
+  @Test
+  public void test_not_like() {
+    FunctionExpression notLike = dsl.notLike(DSL.literal("bob"), DSL.literal("tom"));
+    assertEquals(BOOLEAN, notLike.type());
+    assertTrue(notLike.valueOf(valueEnv()).booleanValue());
+    assertEquals(String.format("not like(\"%s\", \"%s\")", "bob", "tom"), notLike.toString());
+
+    notLike = dsl.notLike(DSL.literal("bob"), DSL.literal("bo%"));
+    assertFalse(notLike.valueOf(valueEnv()).booleanValue());
+    assertEquals(String.format("not like(\"%s\", \"%s\")", "bob", "bo%"), notLike.toString());
+  }
+
+  @Test
+  void test_regexp() {
+    STRING_PATTERN_PAIRS.forEach(this::testRegexpString);
+  }
+
+  void testRegexpString(StringPatternPair stringPatternPair) {
+    FunctionExpression expression = dsl.regexp(
+            DSL.literal(new ExprStringValue(stringPatternPair.getStr())),
+            DSL.literal(new ExprStringValue(stringPatternPair.getPatt())));
+    assertEquals(INTEGER, expression.type());
+    assertEquals(stringPatternPair.regExpTest(), expression
+        .valueOf(valueEnv()).integerValue());
   }
 
   /**

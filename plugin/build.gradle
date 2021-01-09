@@ -24,7 +24,7 @@ esplugin {
 
 javadoc.enabled = false
 test.enabled = false
-integTest.enabled = false
+loggerUsageCheck.enabled = false
 dependencyLicenses.enabled = false
 thirdPartyAudit.enabled = false
 
@@ -33,6 +33,7 @@ configurations.all {
     exclude group: "commons-logging", module: "commons-logging"
     // enforce 1.1.3, https://www.whitesourcesoftware.com/vulnerability-database/WS-2019-0379
     resolutionStrategy.force 'commons-codec:commons-codec:1.13'
+    resolutionStrategy.force 'com.google.guava:guava:29.0-jre'
 }
 
 dependencies {
@@ -88,7 +89,7 @@ validateNebulaPom.enabled = false
 // This is afterEvaluate because the bundlePlugin ZIP task is updated afterEvaluate and changes the ZIP name to match the plugin name
 afterEvaluate {
     ospackage {
-        packageName = "${name}"
+        packageName = "${rootProject.name}"
         release = isSnapshot ? "0.1" : '1'
         version = "${project.version}" - "-SNAPSHOT"
 
@@ -110,7 +111,7 @@ afterEvaluate {
 
         license 'ASL-2.0'
         maintainer 'OpenDistro for Elasticsearch Team <opendistro@amazon.com>'
-        url 'https://opendistro.github.io/elasticsearch/downloads'
+        url 'https://opendistro.github.io/for-elasticsearch/downloads.html'
         summary '''
          SQL plugin for OpenDistro for Elasticsearch.
          Reference documentation can be found at https://opendistro.github.io/for-elasticsearch-docs/.
@@ -128,5 +129,4 @@ afterEvaluate {
         archiveName "${packageName}-${version}.deb"
         dependsOn 'assemble'
     }
-
 }

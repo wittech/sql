@@ -231,7 +231,8 @@ uid
 simpleId
     : ID
     | DOT_ID  // note: the current scope by adding DOT_ID to simpleId is large, move DOT_ID upwards tablename if needed
-    | STRING_LITERAL
+    | DOUBLE_QUOTE_ID
+    | BACKTICK_QUOTE_ID
     | keywordsCanBeId
     | functionNameBase
     ;
@@ -472,7 +473,7 @@ functionNameBase
     | LOG10 | LOG2 | LOWER | LTRIM | MAKETIME | MODULUS | MONTH | MONTHNAME | MULTIPLY
     | NOW | PI | POW | POWER | RADIANS | RAND | REPLACE | RIGHT | RINT | ROUND | RTRIM
     | SIGN | SIGNUM | SIN | SINH | SQRT | SUBSTRING | SUBTRACT | TAN | TIMESTAMP | TRIM
-    | UPPER | YEAR | ADDDATE | ADDTIME | GREATEST | LEAST
+    | UPPER | YEAR | ADDDATE | ADDTIME | GREATEST | LEAST | STRCMP
     ;
 
 esFunctionNameBase

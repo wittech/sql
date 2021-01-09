@@ -15,7 +15,8 @@
 
 package com.amazon.opendistroforelasticsearch.sql.ppl.parser;
 
-import static com.amazon.opendistroforelasticsearch.sql.common.utils.StringUtils.unquoteIdentifier;
+import static com.amazon.opendistroforelasticsearch.sql.expression.function.BuiltinFunctionName.IS_NOT_NULL;
+import static com.amazon.opendistroforelasticsearch.sql.expression.function.BuiltinFunctionName.IS_NULL;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.BinaryArithmeticContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.BooleanLiteralContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.CompareExprContext;
@@ -23,22 +24,24 @@ import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDis
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.EvalClauseContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.EvalFunctionCallContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.FieldExpressionContext;
+import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.IdentsAsQualifiedNameContext;
+import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.IdentsAsWildcardQualifiedNameContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.InExprContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.IntegerLiteralContext;
+import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.IntervalLiteralContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.LogicalAndContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.LogicalNotContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.LogicalOrContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.LogicalXorContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.ParentheticBinaryArithmeticContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.PercentileAggFunctionContext;
-import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.QualifiedNameContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.SortFieldContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.StatsFunctionCallContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.StringLiteralContext;
 import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.WcFieldExpressionContext;
-import static com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser.WcQualifiedNameContext;
 
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.AggregateFunction;
+import com.amazon.opendistroforelasticsearch.sql.ast.expression.AllFields;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.And;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.Argument;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.Compare;
@@ -46,6 +49,8 @@ import com.amazon.opendistroforelasticsearch.sql.ast.expression.DataType;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.Field;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.Function;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.In;
+import com.amazon.opendistroforelasticsearch.sql.ast.expression.Interval;
+import com.amazon.opendistroforelasticsearch.sql.ast.expression.IntervalUnit;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.Let;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.Literal;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.Not;
@@ -54,10 +59,13 @@ import com.amazon.opendistroforelasticsearch.sql.ast.expression.QualifiedName;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.UnresolvedExpression;
 import com.amazon.opendistroforelasticsearch.sql.ast.expression.Xor;
 import com.amazon.opendistroforelasticsearch.sql.common.utils.StringUtils;
+import com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParser;
 import com.amazon.opendistroforelasticsearch.sql.ppl.antlr.parser.OpenDistroPPLParserBaseVisitor;
 import com.amazon.opendistroforelasticsearch.sql.ppl.utils.ArgumentFactory;
+import com.google.common.collect.ImmutableMap;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.antlr.v4.runtime.ParserRuleContext;
 
@@ -65,6 +73,16 @@ import org.antlr.v4.runtime.ParserRuleContext;
  * Class of building AST Expression nodes.
  */
 public class AstExpressionBuilder extends OpenDistroPPLParserBaseVisitor<UnresolvedExpression> {
+
+  /**
+   * The function name mapping between fronted and core engine.
+   */
+  private static Map<String, String> FUNCTION_NAME_MAPPING =
+      new ImmutableMap.Builder<String, String>()
+          .put("isnull", IS_NULL.getName().getFunctionName())
+          .put("isnotnull", IS_NOT_NULL.getName().getFunctionName())
+          .build();
+
   /**
    * Eval clause.
    */
@@ -165,9 +183,32 @@ public class AstExpressionBuilder extends OpenDistroPPLParserBaseVisitor<Unresol
   }
 
   @Override
+  public UnresolvedExpression visitCountAllFunctionCall(
+      OpenDistroPPLParser.CountAllFunctionCallContext ctx) {
+    return new AggregateFunction("count", AllFields.of());
+  }
+
+  @Override
   public UnresolvedExpression visitPercentileAggFunction(PercentileAggFunctionContext ctx) {
     return new AggregateFunction(ctx.PERCENTILE().getText(), visit(ctx.aggField),
         Collections.singletonList(new Argument("rank", (Literal) visit(ctx.value))));
+  }
+
+  /**
+   * Eval function.
+   */
+  @Override
+  public UnresolvedExpression visitBooleanFunctionCall(
+      OpenDistroPPLParser.BooleanFunctionCallContext ctx) {
+    final String functionName = ctx.conditionFunctionBase().getText();
+
+    return new Function(
+        FUNCTION_NAME_MAPPING.getOrDefault(functionName, functionName),
+        ctx.functionArgs()
+            .functionArg()
+            .stream()
+            .map(this::visitFunctionArg)
+            .collect(Collectors.toList()));
   }
 
   /**
@@ -188,30 +229,37 @@ public class AstExpressionBuilder extends OpenDistroPPLParserBaseVisitor<Unresol
    * Literal and value.
    */
   @Override
-  public UnresolvedExpression visitQualifiedName(QualifiedNameContext ctx) {
+  public UnresolvedExpression visitIdentsAsQualifiedName(IdentsAsQualifiedNameContext ctx) {
     return new QualifiedName(
         ctx.ident()
             .stream()
             .map(ParserRuleContext::getText)
-            .map(StringUtils::unquoteIdentifier)
+            .map(StringUtils::unquoteText)
             .collect(Collectors.toList())
     );
   }
 
   @Override
-  public UnresolvedExpression visitWcQualifiedName(WcQualifiedNameContext ctx) {
+  public UnresolvedExpression visitIdentsAsWildcardQualifiedName(
+      IdentsAsWildcardQualifiedNameContext ctx) {
     return new QualifiedName(
         ctx.wildcard()
             .stream()
             .map(ParserRuleContext::getText)
-            .map(StringUtils::unquoteIdentifier)
+            .map(StringUtils::unquoteText)
             .collect(Collectors.toList())
     );
   }
 
   @Override
+  public UnresolvedExpression visitIntervalLiteral(IntervalLiteralContext ctx) {
+    return new Interval(
+        visit(ctx.valueExpression()), IntervalUnit.of(ctx.intervalUnit().getText()));
+  }
+
+  @Override
   public UnresolvedExpression visitStringLiteral(StringLiteralContext ctx) {
-    return new Literal(unquoteIdentifier(ctx.getText()), DataType.STRING);
+    return new Literal(StringUtils.unquoteText(ctx.getText()), DataType.STRING);
   }
 
   @Override

@@ -17,11 +17,10 @@ package com.amazon.opendistroforelasticsearch.sql.ppl.utils;
 
 import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.agg;
 import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.aggregate;
+import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.alias;
 import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.argument;
 import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.booleanLiteral;
 import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.dedupe;
-import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.defaultSortFieldArgs;
-import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.defaultSortOptions;
 import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.exprList;
 import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.field;
 import static com.amazon.opendistroforelasticsearch.sql.ast.dsl.AstDSL.intLiteral;
@@ -57,7 +56,11 @@ public class ArgumentFactoryTest extends AstBuilderTest {
         "source=t | stats partitions=1 allnum=false delim=',' avg(a) dedup_splitvalues=true",
         agg(
             relation("t"),
-            exprList(aggregate("avg", field("a"))),
+            exprList(
+                alias(
+                    "avg(a)",
+                    aggregate("avg", field("a")))
+                ),
             emptyList(),
             emptyList(),
             exprList(
@@ -99,23 +102,9 @@ public class ArgumentFactoryTest extends AstBuilderTest {
   }
 
   @Test
-  public void testSortCommandArgument() {
-    assertEqual("source=t | sort 3 field0 desc",
-        sort(
-            relation("t"),
-            exprList(
-                argument("count", intLiteral(3)),
-                argument("desc", booleanLiteral(true))
-            ),
-            field("field0", defaultSortFieldArgs())
-        ));
-    assertEqual("source=t | sort 3 field0 d", "source=t | sort 3 field0 desc");
-  }
-
-  @Test
   public void testSortCommandDefaultArgument() {
     assertEqual(
-        "source=t | sort 1000 field0",
+        "source=t | sort field0",
         "source=t | sort field0"
     );
   }
@@ -125,7 +114,6 @@ public class ArgumentFactoryTest extends AstBuilderTest {
     assertEqual("source=t | sort - auto(field0)",
         sort(
             relation("t"),
-            defaultSortOptions(),
             field(
                 "field0",
                 exprList(

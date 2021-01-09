@@ -19,6 +19,7 @@ import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtil
 import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.LITERAL_MISSING;
 import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.LITERAL_NULL;
 import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.LITERAL_TRUE;
+import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.byteValue;
 import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.collectionValue;
 import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.doubleValue;
 import static com.amazon.opendistroforelasticsearch.sql.data.model.ExprValueUtils.floatValue;
@@ -144,6 +145,14 @@ class ExprValueOrderingTest {
   }
 
   @Test
+  public void natural_order_byte_value() {
+    ExprValueOrdering ordering = ExprValueOrdering.natural();
+    assertEquals(1, ordering.compare(byteValue((byte) 5), byteValue((byte) 4)));
+    assertEquals(0, ordering.compare(byteValue((byte) 5), byteValue((byte) 5)));
+    assertEquals(-1, ordering.compare(byteValue((byte) 4), byteValue((byte) 5)));
+  }
+
+  @Test
   public void natural_order_boolean_value() {
     ExprValueOrdering ordering = ExprValueOrdering.natural();
     assertEquals(1, ordering.compare(LITERAL_TRUE, LITERAL_FALSE));
@@ -195,14 +204,20 @@ class ExprValueOrderingTest {
   }
 
   @Test
+  public void order_compare_value_with_compatible_number_type() {
+    ExprValueOrdering ordering = ExprValueOrdering.natural();
+    assertEquals(1, ordering.compare(integerValue(2), doubleValue(1d)));
+  }
+
+  @Test
   public void order_compare_value_with_different_type() {
     ExprValueOrdering ordering = ExprValueOrdering.natural();
     ExpressionEvaluationException exception =
         assertThrows(
             ExpressionEvaluationException.class,
-            () -> ordering.compare(integerValue(1), doubleValue(2d)));
+            () -> ordering.compare(integerValue(1), stringValue("2")));
     assertEquals(
-        "compare expected value have same type, but with [INTEGER, DOUBLE]",
+        "compare expected value have same type, but with [INTEGER, STRING]",
         exception.getMessage());
   }
 }

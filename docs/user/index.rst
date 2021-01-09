@@ -20,7 +20,8 @@ Open Distro for Elasticsearch SQL enables you to extract insights out of Elastic
 * **Language Structure**
 
   - `Identifiers <general/identifiers.rst>`_
-  - `Data Types <general/datatype.rst>`_
+
+  - `Data Types <general/datatypes.rst>`_
 
 * **Data Query Language**
 
@@ -34,6 +35,10 @@ Open Distro for Elasticsearch SQL enables you to extract insights out of Elastic
 
   - `SQL Functions <dql/functions.rst>`_
 
+  - `SQL Aggregations <dql/aggregations.rst>`_
+
+  - `Window Functions <dql/window.rst>`_
+
 * **Data Manipulation Language**
 
   - `DELETE Statement <dml/delete.rst>`_
@@ -44,7 +49,15 @@ Open Distro for Elasticsearch SQL enables you to extract insights out of Elastic
 
   - `Full-text Search <beyond/fulltext.rst>`_
 
+* **Optimization**
+
+  - `Optimization <optimization/optimization.rst>`_
+
 * **Troubleshooting**
 
   - `Troubleshooting <dql/troubleshooting.rst>`_
+
+* **Limitations**
+
+  - `Limitations <limitations/limitations.rst>`_
 

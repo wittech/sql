@@ -1648,6 +1648,7 @@ public class QueryIT extends SQLIntegTestCase {
     Assert.assertEquals(21, hits.length());
   }
 
+  @Ignore("New engine doesn't have 'alias' field in schema in response")
   @Test
   public void backticksQuotedIndexNameTest() throws Exception {
     TestUtils.createIndexByRestClient(client(), "bank_unquote", null);
@@ -1721,8 +1722,8 @@ public class QueryIT extends SQLIntegTestCase {
   @Test
   public void caseWhenSwitchTest() throws IOException {
     JSONObject response = executeQuery("SELECT CASE age " +
-        "WHEN '30' THEN '1' " +
-        "WHEN '40' THEN '2' " +
+        "WHEN 30 THEN '1' " +
+        "WHEN 40 THEN '2' " +
         "ELSE '0' END AS cases FROM " + TEST_INDEX_ACCOUNT + " WHERE age IS NOT NULL");
     JSONObject hit = getHits(response).getJSONObject(0);
     String age = hit.query("/_source/age").toString();
@@ -1734,8 +1735,8 @@ public class QueryIT extends SQLIntegTestCase {
   @Test
   public void caseWhenJdbcResponseTest() {
     String response = executeQuery("SELECT CASE age " +
-        "WHEN '30' THEN 'age is 30' " +
-        "WHEN '40' THEN 'age is 40' " +
+        "WHEN 30 THEN 'age is 30' " +
+        "WHEN 40 THEN 'age is 40' " +
         "ELSE 'NA' END AS cases FROM " + TEST_INDEX_ACCOUNT + " WHERE age is not null", "jdbc");
     assertTrue(
         response.contains("age is 30") ||
@@ -1744,6 +1745,7 @@ public class QueryIT extends SQLIntegTestCase {
     );
   }
 
+  @Ignore("This is already supported in new SQL engine")
   @Test
   public void functionInCaseFieldShouldThrowESExceptionDueToIllegalScriptInJdbc() {
     String response = executeQuery(
@@ -1754,6 +1756,7 @@ public class QueryIT extends SQLIntegTestCase {
         "For more details, please send request for Json format");
   }
 
+  @Ignore("This is already supported in our new query engine")
   @Test
   public void functionCallWithIllegalScriptShouldThrowESExceptionInJdbc() {
     String response = executeQuery("select log(balance + 2) from " + TEST_INDEX_BANK,

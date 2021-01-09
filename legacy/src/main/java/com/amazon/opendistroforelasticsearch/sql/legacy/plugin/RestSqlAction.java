@@ -15,7 +15,19 @@
 
 package com.amazon.opendistroforelasticsearch.sql.legacy.plugin;
 
+import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.CURSOR_ENABLED;
+import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.QUERY_ANALYSIS_ENABLED;
+import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.QUERY_ANALYSIS_SEMANTIC_SUGGESTION;
+import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.QUERY_ANALYSIS_SEMANTIC_THRESHOLD;
+import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.SQL_ENABLED;
+import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.SQL_NEW_ENGINE_ENABLED;
+import static org.elasticsearch.rest.RestStatus.BAD_REQUEST;
+import static org.elasticsearch.rest.RestStatus.OK;
+import static org.elasticsearch.rest.RestStatus.SERVICE_UNAVAILABLE;
+
 import com.alibaba.druid.sql.parser.ParserException;
+import com.amazon.opendistroforelasticsearch.sql.common.antlr.SyntaxCheckException;
+import com.amazon.opendistroforelasticsearch.sql.exception.SemanticCheckException;
 import com.amazon.opendistroforelasticsearch.sql.legacy.antlr.OpenDistroSqlAnalyzer;
 import com.amazon.opendistroforelasticsearch.sql.legacy.antlr.SqlAnalysisConfig;
 import com.amazon.opendistroforelasticsearch.sql.legacy.antlr.SqlAnalysisException;
@@ -43,6 +55,16 @@ import com.amazon.opendistroforelasticsearch.sql.legacy.utils.LogUtils;
 import com.amazon.opendistroforelasticsearch.sql.legacy.utils.QueryDataAnonymizer;
 import com.amazon.opendistroforelasticsearch.sql.sql.domain.SQLQueryRequest;
 import com.google.common.collect.ImmutableList;
+import java.sql.SQLFeatureNotSupportedException;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.elasticsearch.client.Client;
@@ -55,26 +77,6 @@ import org.elasticsearch.rest.BytesRestResponse;
 import org.elasticsearch.rest.RestChannel;
 import org.elasticsearch.rest.RestRequest;
 import org.elasticsearch.rest.RestStatus;
-
-import java.sql.SQLFeatureNotSupportedException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.function.Predicate;
-import java.util.regex.Pattern;
-
-import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.QUERY_ANALYSIS_ENABLED;
-import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.QUERY_ANALYSIS_SEMANTIC_SUGGESTION;
-import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.QUERY_ANALYSIS_SEMANTIC_THRESHOLD;
-import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.SQL_ENABLED;
-import static com.amazon.opendistroforelasticsearch.sql.legacy.plugin.SqlSettings.SQL_NEW_ENGINE_ENABLED;
-import static org.elasticsearch.rest.RestStatus.BAD_REQUEST;
-import static org.elasticsearch.rest.RestStatus.OK;
-import static org.elasticsearch.rest.RestStatus.SERVICE_UNAVAILABLE;
 
 public class RestSqlAction extends BaseRestHandler {
 
@@ -96,18 +98,19 @@ public class RestSqlAction extends BaseRestHandler {
      */
     private final RestSQLQueryAction newSqlQueryHandler;
 
-    public RestSqlAction(Settings settings, ClusterService clusterService) {
+    public RestSqlAction(Settings settings, ClusterService clusterService,
+                         com.amazon.opendistroforelasticsearch.sql.common.setting.Settings pluginSettings) {
         super();
         this.allowExplicitIndex = MULTI_ALLOW_EXPLICIT_INDEX.get(settings);
-        this.newSqlQueryHandler = new RestSQLQueryAction(clusterService);
+        this.newSqlQueryHandler = new RestSQLQueryAction(clusterService, pluginSettings);
     }
 
     @Override
     public List<Route> routes() {
         return ImmutableList.of(
-                new Route(RestRequest.Method.POST, QUERY_API_ENDPOINT),
-                new Route(RestRequest.Method.POST, EXPLAIN_API_ENDPOINT),
-                new Route(RestRequest.Method.POST, CURSOR_CLOSE_ENDPOINT)
+            new Route(RestRequest.Method.POST, QUERY_API_ENDPOINT),
+            new Route(RestRequest.Method.POST, EXPLAIN_API_ENDPOINT),
+            new Route(RestRequest.Method.POST, CURSOR_CLOSE_ENDPOINT)
         );
     }
 
@@ -145,16 +148,13 @@ public class RestSqlAction extends BaseRestHandler {
 
             Format format = SqlRequestParam.getFormat(request.params());
 
-            if (isNewEngineEnabled()) {
+            if (isNewEngineEnabled() && isCursorDisabled()) {
                 // Route request to new query engine if it's supported already
                 SQLQueryRequest newSqlRequest = new SQLQueryRequest(sqlRequest.getJsonContent(),
-                                                                    sqlRequest.getSql(),
-                                                                    request.path(),
-                                                                    format.getFormatName());
+                    sqlRequest.getSql(), request.path(), request.params());
                 RestChannelConsumer result = newSqlQueryHandler.prepareRequest(newSqlRequest, client);
                 if (result != RestSQLQueryAction.NOT_SUPPORTED_YET) {
-                    LOG.info("[{}] Request {} is handled by new SQL query engine",
-                        LogUtils.getRequestId(), newSqlRequest);
+                    LOG.info("[{}] Request is handled by new SQL query engine", LogUtils.getRequestId());
                     return result;
                 }
                 LOG.debug("[{}] Request {} is not supported and falling back to old SQL engine",
@@ -172,7 +172,7 @@ public class RestSqlAction extends BaseRestHandler {
     @Override
     protected Set<String> responseParams() {
         Set<String> responseParams = new HashSet<>(super.responseParams());
-        responseParams.addAll(Arrays.asList("sql", "flat", "separator", "_score", "_type", "_id", "newLine", "format"));
+        responseParams.addAll(Arrays.asList("sql", "flat", "separator", "_score", "_type", "_id", "newLine", "format", "sanitize"));
         return responseParams;
     }
 
@@ -246,7 +246,9 @@ public class RestSqlAction extends BaseRestHandler {
             || e instanceof IllegalArgumentException
             || e instanceof IndexNotFoundException
             || e instanceof VerificationException
-            || e instanceof SqlAnalysisException;
+            || e instanceof SqlAnalysisException
+            || e instanceof SyntaxCheckException
+            || e instanceof SemanticCheckException;
     }
 
     private void sendResponse(final RestChannel channel, final String message, final RestStatus status) {
@@ -264,6 +266,11 @@ public class RestSqlAction extends BaseRestHandler {
 
     private boolean isNewEngineEnabled() {
         return LocalClusterState.state().getSettingValue(SQL_NEW_ENGINE_ENABLED);
+    }
+
+    private boolean isCursorDisabled() {
+        Boolean isEnabled = LocalClusterState.state().getSettingValue(CURSOR_ENABLED);
+        return Boolean.FALSE.equals(isEnabled);
     }
 
     private static ColumnTypeProvider performAnalysis(String sql) {

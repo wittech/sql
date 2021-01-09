@@ -54,7 +54,6 @@ import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.rest.RestStatus;
-import org.elasticsearch.test.rest.ESRestTestCase;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
@@ -72,7 +71,7 @@ import org.junit.Before;
  * <p>
  * TODO: this base class should extends ODFERestTestCase
  */
-public abstract class RestIntegTestCase extends ESRestTestCase {
+public abstract class RestIntegTestCase extends ODFERestTestCase {
 
   @Before
   public void setUpIndices() throws Exception {
@@ -80,7 +79,6 @@ public abstract class RestIntegTestCase extends ESRestTestCase {
       initClient();
     }
 
-    increaseScriptMaxCompilationsRate();
     init();
   }
 
@@ -135,7 +133,7 @@ public abstract class RestIntegTestCase extends ESRestTestCase {
    */
   @AfterClass
   public static void cleanUpIndices() throws IOException {
-    wipeAllIndices();
+    wipeAllODFEIndices();
     wipeAllClusterSettings();
   }
 
@@ -152,14 +150,6 @@ public abstract class RestIntegTestCase extends ESRestTestCase {
       createIndexByRestClient(client(), indexName, mapping);
       loadDataByRestClient(client(), indexName, dataSet);
     }
-  }
-
-  /**
-   * Increase script.max_compilations_rate to large enough, which is only 75/5min by default.
-   * This issue is due to our painless script not using params passed to compiled script.
-   */
-  private void increaseScriptMaxCompilationsRate() throws IOException {
-    updateClusterSetting("script.max_compilations_rate", "10000/1m", false);
   }
 
   /**

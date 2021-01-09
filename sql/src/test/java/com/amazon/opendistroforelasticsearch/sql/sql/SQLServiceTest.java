@@ -22,17 +22,17 @@ import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 
-import com.amazon.opendistroforelasticsearch.sql.ast.tree.UnresolvedPlan;
 import com.amazon.opendistroforelasticsearch.sql.common.response.ResponseListener;
 import com.amazon.opendistroforelasticsearch.sql.executor.ExecutionEngine;
-import com.amazon.opendistroforelasticsearch.sql.sql.antlr.SQLSyntaxParser;
+import com.amazon.opendistroforelasticsearch.sql.executor.ExecutionEngine.ExplainResponse;
+import com.amazon.opendistroforelasticsearch.sql.executor.ExecutionEngine.ExplainResponseNode;
+import com.amazon.opendistroforelasticsearch.sql.planner.physical.PhysicalPlan;
 import com.amazon.opendistroforelasticsearch.sql.sql.config.SQLServiceConfig;
 import com.amazon.opendistroforelasticsearch.sql.sql.domain.SQLQueryRequest;
-import com.amazon.opendistroforelasticsearch.sql.sql.parser.AstBuilder;
 import com.amazon.opendistroforelasticsearch.sql.storage.StorageEngine;
 import java.util.Collections;
-import org.antlr.v4.runtime.tree.ParseTree;
 import org.json.JSONObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,6 +54,9 @@ class SQLServiceTest {
   @Mock
   private ExecutionEngine executionEngine;
 
+  @Mock
+  private ExecutionEngine.Schema schema;
+
   @BeforeEach
   public void setUp() {
     context.registerBean(StorageEngine.class, () -> storageEngine);
@@ -67,7 +70,7 @@ class SQLServiceTest {
   public void canExecuteSqlQuery() {
     doAnswer(invocation -> {
       ResponseListener<QueryResponse> listener = invocation.getArgument(1);
-      listener.onResponse(new QueryResponse(Collections.emptyList()));
+      listener.onResponse(new QueryResponse(schema, Collections.emptyList()));
       return null;
     }).when(executionEngine).execute(any(), any());
 
@@ -87,17 +90,59 @@ class SQLServiceTest {
   }
 
   @Test
-  public void canExecuteFromAst() {
+  public void canExecuteCsvFormatRequest() {
     doAnswer(invocation -> {
       ResponseListener<QueryResponse> listener = invocation.getArgument(1);
-      listener.onResponse(new QueryResponse(Collections.emptyList()));
+      listener.onResponse(new QueryResponse(schema, Collections.emptyList()));
       return null;
     }).when(executionEngine).execute(any(), any());
 
-    ParseTree parseTree = new SQLSyntaxParser().parse("SELECT 123");
-    UnresolvedPlan ast = parseTree.accept(new AstBuilder());
+    sqlService.execute(
+        new SQLQueryRequest(new JSONObject(), "SELECT 123", "_opendistro/_sql", "csv"),
+        new ResponseListener<QueryResponse>() {
+          @Override
+          public void onResponse(QueryResponse response) {
+            assertNotNull(response);
+          }
 
-    sqlService.execute(ast,
+          @Override
+          public void onFailure(Exception e) {
+            fail(e);
+          }
+        });
+  }
+
+  @Test
+  public void canExplainSqlQuery() {
+    doAnswer(invocation -> {
+      ResponseListener<ExplainResponse> listener = invocation.getArgument(1);
+      listener.onResponse(new ExplainResponse(new ExplainResponseNode("Test")));
+      return null;
+    }).when(executionEngine).explain(any(), any());
+
+    sqlService.explain(mock(PhysicalPlan.class),
+        new ResponseListener<ExplainResponse>() {
+          @Override
+          public void onResponse(ExplainResponse response) {
+            assertNotNull(response);
+          }
+
+          @Override
+          public void onFailure(Exception e) {
+            fail(e);
+          }
+        });
+  }
+
+  @Test
+  public void canExecuteFromPhysicalPlan() {
+    doAnswer(invocation -> {
+      ResponseListener<QueryResponse> listener = invocation.getArgument(1);
+      listener.onResponse(new QueryResponse(schema, Collections.emptyList()));
+      return null;
+    }).when(executionEngine).execute(any(), any());
+
+    sqlService.execute(mock(PhysicalPlan.class),
         new ResponseListener<QueryResponse>() {
           @Override
           public void onResponse(QueryResponse response) {
@@ -129,17 +174,32 @@ class SQLServiceTest {
   }
 
   @Test
-  public void canCaptureErrorDuringExecutionFromAst() {
+  public void canCaptureErrorDuringExecutionFromPhysicalPlan() {
     doThrow(new RuntimeException()).when(executionEngine).execute(any(), any());
 
-    ParseTree parseTree = new SQLSyntaxParser().parse("SELECT 123");
-    UnresolvedPlan ast = parseTree.accept(new AstBuilder());
-
-    sqlService.execute(ast,
+    sqlService.execute(mock(PhysicalPlan.class),
         new ResponseListener<QueryResponse>() {
           @Override
           public void onResponse(QueryResponse response) {
             fail();
+          }
+
+          @Override
+          public void onFailure(Exception e) {
+            assertNotNull(e);
+          }
+        });
+  }
+
+  @Test
+  public void canCaptureErrorDuringExplain() {
+    doThrow(new RuntimeException()).when(executionEngine).explain(any(), any());
+
+    sqlService.explain(mock(PhysicalPlan.class),
+        new ResponseListener<ExplainResponse>() {
+          @Override
+          public void onResponse(ExplainResponse response) {
+            fail("Should fail as expected");
           }
 
           @Override

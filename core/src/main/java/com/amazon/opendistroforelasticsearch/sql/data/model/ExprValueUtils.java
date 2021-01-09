@@ -15,15 +15,15 @@
 
 package com.amazon.opendistroforelasticsearch.sql.data.model;
 
-import static com.amazon.opendistroforelasticsearch.sql.data.type.ExprCoreType.ARRAY;
-import static com.amazon.opendistroforelasticsearch.sql.data.type.ExprCoreType.BOOLEAN;
-import static com.amazon.opendistroforelasticsearch.sql.data.type.ExprCoreType.STRING;
-import static com.amazon.opendistroforelasticsearch.sql.data.type.ExprCoreType.STRUCT;
-
 import com.amazon.opendistroforelasticsearch.sql.data.type.ExprCoreType;
 import com.amazon.opendistroforelasticsearch.sql.exception.ExpressionEvaluationException;
 import com.google.common.annotations.VisibleForTesting;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZonedDateTime;
+import java.time.temporal.TemporalAmount;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,6 +44,14 @@ public class ExprValueUtils {
     return value ? LITERAL_TRUE : LITERAL_FALSE;
   }
 
+  public static ExprValue byteValue(Byte value) {
+    return new ExprByteValue(value);
+  }
+
+  public static ExprValue shortValue(Short value) {
+    return new ExprShortValue(value);
+  }
+
   public static ExprValue integerValue(Integer value) {
     return new ExprIntegerValue(value);
   }
@@ -62,6 +70,10 @@ public class ExprValueUtils {
 
   public static ExprValue stringValue(String value) {
     return new ExprStringValue(value);
+  }
+
+  public static ExprValue intervalValue(TemporalAmount value) {
+    return new ExprIntervalValue(value);
   }
 
   /**
@@ -101,6 +113,10 @@ public class ExprValueUtils {
       return tupleValue((Map) o);
     } else if (o instanceof List) {
       return collectionValue(((List) o));
+    } else if (o instanceof Byte) {
+      return byteValue((Byte) o);
+    } else if (o instanceof Short) {
+      return shortValue((Short) o);
     } else if (o instanceof Integer) {
       return integerValue((Integer) o);
     } else if (o instanceof Long) {
@@ -129,6 +145,8 @@ public class ExprValueUtils {
         return new ExprDateValue((String)o);
       case TIME:
         return new ExprTimeValue((String)o);
+      case DATETIME:
+        return new ExprDatetimeValue((String)o);
       default:
         return fromObjectValue(o);
     }
@@ -164,12 +182,5 @@ public class ExprValueUtils {
 
   public static Boolean getBooleanValue(ExprValue exprValue) {
     return exprValue.booleanValue();
-  }
-
-  /**
-   * Get {@link ZonedDateTime} from ExprValue of Date type.
-   */
-  public static ZonedDateTime getDateValue(ExprValue exprValue) {
-    return exprValue.dateValue();
   }
 }

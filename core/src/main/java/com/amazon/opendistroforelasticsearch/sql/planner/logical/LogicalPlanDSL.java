@@ -15,11 +15,14 @@
 
 package com.amazon.opendistroforelasticsearch.sql.planner.logical;
 
+import com.amazon.opendistroforelasticsearch.sql.ast.tree.RareTopN.CommandType;
 import com.amazon.opendistroforelasticsearch.sql.ast.tree.Sort.SortOption;
 import com.amazon.opendistroforelasticsearch.sql.expression.Expression;
 import com.amazon.opendistroforelasticsearch.sql.expression.LiteralExpression;
+import com.amazon.opendistroforelasticsearch.sql.expression.NamedExpression;
 import com.amazon.opendistroforelasticsearch.sql.expression.ReferenceExpression;
-import com.amazon.opendistroforelasticsearch.sql.expression.aggregation.Aggregator;
+import com.amazon.opendistroforelasticsearch.sql.expression.aggregation.NamedAggregator;
+import com.amazon.opendistroforelasticsearch.sql.expression.window.WindowDefinition;
 import com.google.common.collect.ImmutableSet;
 import java.util.Arrays;
 import java.util.List;
@@ -32,8 +35,9 @@ import org.apache.commons.lang3.tuple.Pair;
  */
 @UtilityClass
 public class LogicalPlanDSL {
+
   public static LogicalPlan aggregation(
-      LogicalPlan input, List<Aggregator> aggregatorList, List<Expression> groupByList) {
+      LogicalPlan input, List<NamedAggregator> aggregatorList, List<NamedExpression> groupByList) {
     return new LogicalAggregation(input, aggregatorList, groupByList);
   }
 
@@ -50,8 +54,14 @@ public class LogicalPlanDSL {
     return new LogicalRename(input, renameMap);
   }
 
-  public static LogicalPlan project(LogicalPlan input, Expression... fields) {
+  public static LogicalPlan project(LogicalPlan input, NamedExpression... fields) {
     return new LogicalProject(input, Arrays.asList(fields));
+  }
+
+  public LogicalPlan window(LogicalPlan input,
+                            NamedExpression windowFunction,
+                            WindowDefinition windowDefinition) {
+    return new LogicalWindow(input, windowFunction, windowDefinition);
   }
 
   public static LogicalPlan remove(LogicalPlan input, ReferenceExpression... fields) {
@@ -63,9 +73,8 @@ public class LogicalPlanDSL {
     return new LogicalEval(input, Arrays.asList(expressions));
   }
 
-  public static LogicalPlan sort(
-      LogicalPlan input, Integer count, Pair<SortOption, Expression>... sorts) {
-    return new LogicalSort(input, count, Arrays.asList(sorts));
+  public static LogicalPlan sort(LogicalPlan input, Pair<SortOption, Expression>... sorts) {
+    return new LogicalSort(input, Arrays.asList(sorts));
   }
 
   public static LogicalPlan dedupe(LogicalPlan input, Expression... fields) {
@@ -82,9 +91,28 @@ public class LogicalPlanDSL {
         input, Arrays.asList(fields), allowedDuplication, keepEmpty, consecutive);
   }
 
+  public static LogicalPlan head(
+      LogicalPlan input, boolean keeplast, Expression whileExpr, int number) {
+    return new LogicalHead(input, keeplast, whileExpr, number);
+  }
+  
+  public static LogicalPlan rareTopN(LogicalPlan input, CommandType commandType,
+      List<Expression> groupByList, Expression... fields) {
+    return rareTopN(input, commandType, 10, groupByList, fields);
+  }
+
+  public static LogicalPlan rareTopN(LogicalPlan input, CommandType commandType, int noOfResults,
+      List<Expression> groupByList, Expression... fields) {
+    return new LogicalRareTopN(input, commandType, noOfResults, Arrays.asList(fields), groupByList);
+  }
+
   @SafeVarargs
   public LogicalPlan values(List<LiteralExpression>... values) {
     return new LogicalValues(Arrays.asList(values));
+  }
+
+  public static LogicalPlan limit(LogicalPlan input, Integer limit, Integer offset) {
+    return new LogicalLimit(input, limit, offset);
   }
 
 }

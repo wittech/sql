@@ -17,8 +17,11 @@
 
 package com.amazon.opendistroforelasticsearch.sql.data.type;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -33,7 +36,8 @@ public enum ExprCoreType implements ExprType {
   /**
    * Numbers.
    */
-  SHORT,
+  BYTE,
+  SHORT(BYTE),
   INTEGER(SHORT),
   LONG(INTEGER),
   FLOAT(LONG),
@@ -57,6 +61,8 @@ public enum ExprCoreType implements ExprType {
   TIMESTAMP,
   DATE,
   TIME,
+  DATETIME,
+  INTERVAL,
 
   /**
    * Struct.
@@ -72,6 +78,16 @@ public enum ExprCoreType implements ExprType {
    * Parent of current base type.
    */
   private ExprCoreType parent;
+
+  /**
+   * The mapping between Type and legacy JDBC type name.
+   */
+  private static final Map<ExprCoreType, String> LEGACY_TYPE_NAME_MAPPING =
+      new ImmutableMap.Builder<ExprCoreType, String>()
+          .put(STRUCT, "object")
+          .put(ARRAY, "nested")
+          .put(STRING, "keyword")
+          .build();
 
   ExprCoreType(ExprCoreType... compatibleTypes) {
     for (ExprCoreType subType : compatibleTypes) {
@@ -89,11 +105,20 @@ public enum ExprCoreType implements ExprType {
     return this.name();
   }
 
+  @Override
+  public String legacyTypeName() {
+    return LEGACY_TYPE_NAME_MAPPING.getOrDefault(this, this.name());
+  }
+
   /**
-   * Retrun all the valid ExprCoreType.
+   * Return all the valid ExprCoreType.
    */
   public static List<ExprType> coreTypes() {
     return Arrays.stream(ExprCoreType.values()).filter(type -> type != UNKNOWN)
         .collect(Collectors.toList());
+  }
+
+  public static List<ExprType> numberTypes() {
+    return ImmutableList.of(INTEGER, LONG, FLOAT, DOUBLE);
   }
 }

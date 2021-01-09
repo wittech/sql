@@ -113,6 +113,7 @@ SUM:                                'SUM';
 SUBSTRING:                          'SUBSTRING';
 TRIM:                               'TRIM';
 YEAR:                               'YEAR';
+STRCMP:                             'STRCMP';
 
 
 // Keywords, but can be ID
@@ -290,7 +291,7 @@ COLON_SYMB:                         ':';
 // Literal Primitives
 
 START_NATIONAL_STRING_LITERAL:      'N' SQUOTA_STRING;
-STRING_LITERAL:                     DQUOTA_STRING | SQUOTA_STRING | BQUOTA_STRING;
+STRING_LITERAL:                     SQUOTA_STRING;
 DECIMAL_LITERAL:                    DEC_DIGIT+;
 HEXADECIMAL_LITERAL:                'X' '\'' (HEX_DIGIT HEX_DIGIT)+ '\''
                                     | '0X' HEX_DIGIT+;
@@ -317,6 +318,8 @@ DOT_ID:                             '.' ID_LITERAL;
 ID:                                 ID_LITERAL;
 // DOUBLE_QUOTE_ID:                 '"' ~'"'+ '"';
 REVERSE_QUOTE_ID:                   '`' ~'`'+ '`';
+DOUBLE_QUOTE_ID:                    DQUOTA_STRING;
+BACKTICK_QUOTE_ID:                  BQUOTA_STRING;
 STRING_USER_NAME:                   (
                                         SQUOTA_STRING | DQUOTA_STRING
                                         | BQUOTA_STRING | ID_LITERAL

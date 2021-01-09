@@ -21,19 +21,25 @@ import com.amazon.opendistroforelasticsearch.sql.analysis.Analyzer;
 import com.amazon.opendistroforelasticsearch.sql.ast.tree.UnresolvedPlan;
 import com.amazon.opendistroforelasticsearch.sql.common.response.ResponseListener;
 import com.amazon.opendistroforelasticsearch.sql.executor.ExecutionEngine;
+import com.amazon.opendistroforelasticsearch.sql.executor.ExecutionEngine.ExplainResponse;
 import com.amazon.opendistroforelasticsearch.sql.executor.ExecutionEngine.QueryResponse;
+import com.amazon.opendistroforelasticsearch.sql.expression.DSL;
+import com.amazon.opendistroforelasticsearch.sql.expression.function.BuiltinFunctionRepository;
 import com.amazon.opendistroforelasticsearch.sql.planner.Planner;
 import com.amazon.opendistroforelasticsearch.sql.planner.logical.LogicalPlan;
+import com.amazon.opendistroforelasticsearch.sql.planner.optimizer.LogicalPlanOptimizer;
 import com.amazon.opendistroforelasticsearch.sql.planner.physical.PhysicalPlan;
 import com.amazon.opendistroforelasticsearch.sql.sql.antlr.SQLSyntaxParser;
 import com.amazon.opendistroforelasticsearch.sql.sql.domain.SQLQueryRequest;
 import com.amazon.opendistroforelasticsearch.sql.sql.parser.AstBuilder;
 import com.amazon.opendistroforelasticsearch.sql.storage.StorageEngine;
+import lombok.RequiredArgsConstructor;
 import org.antlr.v4.runtime.tree.ParseTree;
 
 /**
  * SQL service.
  */
+@RequiredArgsConstructor
 public class SQLService {
 
   private final SQLSyntaxParser parser;
@@ -44,20 +50,7 @@ public class SQLService {
 
   private final ExecutionEngine executionEngine;
 
-  /**
-   * Initialize SQL service.
-   * @param parser              SQL syntax parser
-   * @param analyzer            AST analyzer
-   * @param storageEngine       storage engine
-   * @param executionEngine     execution engine
-   */
-  public SQLService(SQLSyntaxParser parser, Analyzer analyzer,
-                    StorageEngine storageEngine, ExecutionEngine executionEngine) {
-    this.parser = parser;
-    this.analyzer = analyzer;
-    this.storageEngine = storageEngine;
-    this.executionEngine = executionEngine;
-  }
+  private final BuiltinFunctionRepository repository;
 
   /**
    * Parse, analyze, plan and execute the query.
@@ -76,15 +69,26 @@ public class SQLService {
   }
 
   /**
-   * Given AST, run the remaining steps to execute it.
-   * @param ast         AST
+   * Given physical plan, execute it and listen on response.
+   * @param plan        physical plan
    * @param listener    callback listener
    */
-  public void execute(UnresolvedPlan ast, ResponseListener<QueryResponse> listener) {
+  public void execute(PhysicalPlan plan, ResponseListener<QueryResponse> listener) {
     try {
-      executionEngine.execute(
-          plan(
-              analyze(ast)), listener);
+      executionEngine.execute(plan, listener);
+    } catch (Exception e) {
+      listener.onFailure(e);
+    }
+  }
+
+  /**
+   * Given physical plan, explain it.
+   * @param plan        physical plan
+   * @param listener    callback listener
+   */
+  public void explain(PhysicalPlan plan, ResponseListener<ExplainResponse> listener) {
+    try {
+      executionEngine.explain(plan, listener);
     } catch (Exception e) {
       listener.onFailure(e);
     }
@@ -95,7 +99,7 @@ public class SQLService {
    */
   public UnresolvedPlan parse(String query) {
     ParseTree cst = parser.parse(query);
-    return cst.accept(new AstBuilder());
+    return cst.accept(new AstBuilder(query));
   }
 
   /**
@@ -109,7 +113,8 @@ public class SQLService {
    * Generate optimal physical plan from logical plan.
    */
   public PhysicalPlan plan(LogicalPlan logicalPlan) {
-    return new Planner(storageEngine).plan(logicalPlan);
+    return new Planner(storageEngine, LogicalPlanOptimizer.create(new DSL(repository)))
+        .plan(logicalPlan);
   }
 
 }

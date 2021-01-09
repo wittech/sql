@@ -21,7 +21,6 @@ import java.util.List;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.ToString;
 
 /**
  * Expression node of literal type
@@ -29,7 +28,6 @@ import lombok.ToString;
  * literal data type (@type) which can be selected from {@link DataType}.
  */
 @Getter
-@ToString
 @EqualsAndHashCode(callSuper = false)
 @RequiredArgsConstructor
 public class Literal extends UnresolvedExpression {
@@ -45,5 +43,10 @@ public class Literal extends UnresolvedExpression {
   @Override
   public <R, C> R accept(AbstractNodeVisitor<R, C> nodeVisitor, C context) {
     return nodeVisitor.visitLiteral(this, context);
+  }
+
+  @Override
+  public String toString() {
+    return String.valueOf(value);
   }
 }
